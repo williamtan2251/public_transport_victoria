@@ -1,12 +1,11 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
-
 The `public transport victoria` sensor platform uses the [Public Transport Victoria (PTV)](https://www.ptv.vic.gov.au/) as a source for public transport departure times for Victoria, Australia.
+
+## Thanks
+This is a branch of the original PTV integration by Bremor.
 
 ## Installation (There are two methods, with HACS or manual)
 
-[![hacs][hacsbadge]][hacs]
-
-Install via HACS (default store) or install manually by copying the files in a new 'custom_components/public_transport_victoria' directory.
+Install via HACS (add this as a custom integration) or install manually by copying the files in a new 'custom_components/public_transport_victoria' directory.
 
 ## Prerequisites
 
@@ -50,6 +49,3 @@ automation:
             - 'sensor.werribee_line_to_city_flinders_street_from_aircraft_station_3'
             - 'sensor.werribee_line_to_city_flinders_street_from_aircraft_station_4'
 ```
-
-[hacs]: https://hacs.xyz
-[hacsbadge]: https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge

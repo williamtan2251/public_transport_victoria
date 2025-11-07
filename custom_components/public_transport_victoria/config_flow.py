@@ -160,10 +160,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             try:
-                # Pass both route_id and route_type to async_stops
+                # Pass route_id to async_stops
                 self.stops = await self.connector.async_stops(
-                    self.data[CONF_ROUTE],  # route_id
-                    self.data[CONF_ROUTE_TYPE]  # route_type
+                    self.data[CONF_ROUTE]  # route_id
                 )
 
                 self.data[CONF_DIRECTION] = user_input[CONF_DIRECTION]

@@ -18,7 +18,7 @@ from .PublicTransportVictoria.public_transport_victoria import Connector
 _LOGGER = logging.getLogger(__name__)
 
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "binary_sensor"]
 
 
 async def async_setup(hass: HomeAssistant, config: dict):
@@ -45,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     await connector._init()
 
-    hass.data[DOMAIN][entry.entry_id] = connector
+    hass.data[DOMAIN][entry.entry_id] = {"connector": connector}
 
     # Use the new async_forward_entry_setups method
 

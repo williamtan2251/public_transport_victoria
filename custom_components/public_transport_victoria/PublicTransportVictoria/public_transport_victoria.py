@@ -293,4 +293,100 @@ class Connector:
             self.async_update_disruptions(0)
         )
 
-# ...existing utility functions unchanged...
+def _parse_utc(utc_str):
+    """Parse UTC string to datetime, return epoch if parsing fails."""
+    if not utc_str:
+        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    try:
+        return datetime.datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except Exception:
+        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
+def _safe_local(utc, hass):
+    """Return both ISO and human local strings for a UTC time if present."""
+    if not utc:
+        return None
+    try:
+        d = datetime.datetime.strptime(utc, "%Y-%m-%dT%H:%M:%SZ")
+        local_tz = get_time_zone(hass.config.time_zone)
+        d = d.replace(tzinfo=datetime.timezone.utc).astimezone(local_tz)
+        return {
+            "iso": d.isoformat(),
+            "human": d.strftime("%Y-%m-%d %I:%M %p"),
+        }
+    except Exception:
+        return {"iso": utc, "human": utc}
+
+def _text_matches_all_groups(text, groups):
+    """Return True if for every group, at least one phrase appears in text."""
+    if not text:
+        return False
+    hay = text.lower()
+    for group in groups:
+        if not any(phrase in hay for phrase in group):
+            return False
+    return True
+
+def _clean_title(title, route_name):
+    """Remove leading '<route_name...> lines:' prefix if present."""
+    if not title:
+        return title
+    t = title.strip()
+    rn = (route_name or "").strip()
+    if not rn:
+        return t
+    # Case-insensitive: if the text starts with the route name and the pre-colon
+    # segment mentions 'line' or 'lines', strip everything up to and including ':'
+    lower = t.lower()
+    rn_lower = rn.lower()
+    colon = lower.find(":")
+    if colon != -1:
+        prefix = lower[:colon].strip()
+        # If the pre-colon prefix mentions lines and contains the route name, strip it
+        if (" line" in prefix or " lines" in prefix) and (rn_lower in prefix):
+            return t[colon+1:].lstrip()
+    return t
+
+def _relative_period(from_local, to_local, hass):
+    """Build a human-friendly relative period string using local ISO datetimes."""
+    try:
+        today = datetime.datetime.now(get_time_zone(hass.config.time_zone)).date()
+        def _label(local_map):
+            if not local_map or not local_map.get("iso"):
+                return None
+            dt = datetime.datetime.fromisoformat(local_map["iso"]).astimezone(get_time_zone(hass.config.time_zone))
+            d = dt.date()
+            if d == today:
+                return "today"
+            if d == today + datetime.timedelta(days=1):
+                return "tomorrow"
+            return dt.strftime("%A %d %B")
+
+        start = _label(from_local)
+        end = _label(to_local)
+        # Only generate relative period if we have both start and end and they're different
+        if start and end and start != end:
+            return f"from {start} until {end}"
+        # Don't generate partial periods for disruptions without clear date ranges
+        return None
+    except Exception:
+        return None
+    return None
+
+def build_URL(id, api_key, request):
+    request = request + ('&' if ('?' in request) else '?')
+    raw = request + 'devid={}'.format(id)
+    hashed = hmac.new(api_key.encode('utf-8'), raw.encode('utf-8'), sha1)
+    signature = hashed.hexdigest()
+    url = BASE_URL + raw + '&signature={}'.format(signature)
+    _LOGGER.debug(url)
+    return url
+
+def convert_utc_to_local(utc, hass):
+    """Convert UTC to Home Assistant local time."""
+    d = datetime.datetime.strptime(utc, "%Y-%m-%dT%H:%M:%SZ")
+    # Get the Home Assistant configured time zone
+    local_tz = get_time_zone(hass.config.time_zone)
+    # Convert the time to the Home Assistant time zone
+    d = d.replace(tzinfo=datetime.timezone.utc).astimezone(local_tz)
+    return d.strftime("%I:%M %p")

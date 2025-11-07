@@ -10,12 +10,16 @@ from .const import ATTRIBUTION, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up binary sensors for Public Transport Victoria from a config entry."""
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
     connector = entry_data["connector"]
 
     # Reuse the current disruptions coordinator from sensors if available
+    # If not available, we simply won't create the binary sensor here.
+    # For simplicity, rely on the count/detail sensors' coordinator to exist.
+    # Users who disable planned sensors still have current coordinator.
     from .sensor import PublicTransportVictoriaGlobalCoordinator
 
     if "coordinator" not in entry_data:
@@ -24,6 +28,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     await coordinator.async_config_entry_first_refresh()
     async_add_entities([PTVCurrentDisruptionsBinarySensor(coordinator)])
+
 
 class PTVCurrentDisruptionsBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor that is on when there are current disruptions."""

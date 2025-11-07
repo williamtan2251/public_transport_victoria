@@ -7,7 +7,6 @@ import logging
 from hashlib import sha1
 
 from homeassistant.util.dt import get_time_zone
- 
 
 
 BASE_URL = "https://timetableapi.ptv.vic.gov.au"
@@ -71,19 +70,50 @@ class Connector:
         """Get routes from Public Transport Victoria API."""
         url = build_URL(self.id, self.api_key, ROUTES_PATH.format(route_type))
 
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
+        timeout = aiohttp.ClientTimeout(
+            total=60,
+            connect=30,
+            sock_read=60,
+            sock_connect=30
+        )
 
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            routes = {}
-            for r in response["routes"]:
-                routes[r["route_id"]] = r["route_name"]
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            headers = {
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive'
+            }
+            async with session.get(url, headers=headers) as response:
+                if response is not None and response.status == 200:
+                    response = await response.json()
 
-            self.route_type = route_type
+                    route_list = []
+                    for r in response["routes"]:
+                        route_number = r.get("route_number", "")
+                        try:
+                            sort_key = int(route_number) if route_number else float('inf')
+                        except ValueError:
+                            sort_key = (1, route_number)
 
-            return routes
+                        route_list.append((
+                            r["route_id"],
+                            sort_key,
+                            f"{route_number} - {r['route_name']}" if route_number else r["route_name"]
+                        ))
+
+                    def sort_key(x):
+                        sort_val = x[1]
+                        if isinstance(sort_val, tuple):
+                            return sort_val
+                        return (0, sort_val)
+
+                    route_list.sort(key=sort_key)
+
+                    routes = {route_id: display_name for route_id, _, display_name in route_list}
+
+                    self.route_type = route_type
+                    return routes
+                else:
+                    return {}
 
     async def async_directions(self, route):
         """Get directions from Public Transport Victoria API."""
@@ -170,24 +200,9 @@ class Connector:
 
         for departure in self.departures:
             _LOGGER.debug(departure)
-    
-    async def async_run(self, run_id):
-        """Get run information from Public Transport Victoria API."""
-        url = build_URL(self.id, self.api_key, f"/v3/runs/{run_id}")
-
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
-
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            if response.get("runs") and len(response["runs"]) > 0:
-                return response["runs"][0]
-        return None
 
     async def async_update_disruptions(self, disruption_status: int):
         """Update disruptions for the configured route.
-
         disruption_status: 0 = current, 1 = planned
         """
         # Build disruptions query filtering to the configured route and type
@@ -420,6 +435,20 @@ def _relative_period(from_local, to_local, hass):
     except Exception:
         return None
     return None
+
+    async def async_run(self, run_id):
+        """Get run information from Public Transport Victoria API."""
+        url = build_URL(self.id, self.api_key, f"/v3/runs/{run_id}")
+
+        async with aiohttp.ClientSession() as session:
+            response = await session.get(url)
+
+        if response is not None and response.status == 200:
+            response = await response.json()
+            _LOGGER.debug(response)
+            if response.get("runs") and len(response["runs"]) > 0:
+                return response["runs"][0]
+        return None
 
 def build_URL(id, api_key, request):
     request = request + ('&' if ('?' in request) else '?')

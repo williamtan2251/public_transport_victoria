@@ -7,5 +7,6 @@
   "requirements": [],
   "dependencies": [],
   "version": "0.3.2",
-  "codeowners": ["@bremor", "@catatonicChimp"]
+  "codeowners": ["@bremor", "@catatonicChimp"],
+  "platforms": ["sensor", "binary_sensor"]
 }

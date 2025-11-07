@@ -33,8 +33,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     # Create current disruptions sensors only (no planned disruptions)
     new_devices.append(PublicTransportVictoriaDisruptionsCountSensor(coordinator))
-    new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, details_limit=details_limit, simplified=False))
-    new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, details_limit=details_limit, simplified=True))
+    new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, details_limit=details_limit))
 
     async_add_entities(new_devices)
 
@@ -111,7 +110,7 @@ class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
 
     def __init__(self, coordinator: DataUpdateCoordinator):
         super().__init__(coordinator)
-        self._attr_name = f"{self.coordinator.connector.route_name} line to {self.coordinator.connector.direction_name} from {self.coordinator.connector.stop_name} disruptions"
+        self._attr_name = f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name} disruptions"
         self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-count"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
@@ -136,16 +135,11 @@ class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
 class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
     """Sensor for details of current disruptions."""
 
-    def __init__(self, coordinator: DataUpdateCoordinator, details_limit: int, simplified: bool = False):
+    def __init__(self, coordinator: DataUpdateCoordinator, details_limit: int):
         super().__init__(coordinator)
         self._details_limit = details_limit
-        self._simplified = simplified
-        label = "current disruption details"
-        if simplified:
-            label += " - simplified"
-        self._attr_name = f"{self.coordinator.connector.route_name} line {label}"
-        suffix = "-simplified" if simplified else ""
-        self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-detail{suffix}"
+        self._attr_name = f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name} current disruption"
+        self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-detail"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
             "name": f"{self.coordinator.connector.route_name} line",
@@ -161,28 +155,25 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
             data = self.coordinator.data or {}
             dis = data.get("disruptions_current") or []
             if dis:
-                if self._simplified:
-                    raw_title = dis[0].get("title") or "Disruption"
-                    title = dis[0].get("title_clean") or raw_title
-                    rel = dis[0].get("period_relative")
-                    result = title
-                    if rel:
-                        import re
-                        date_range_pattern = r'from\s+\w+.*?\s+(?:to|until)\s+\w+.*?(?:\s|$)'
-                        if (rel.startswith("from ") and " until " in rel and
-                                re.search(date_range_pattern, raw_title, re.IGNORECASE)):
-                            if " until " in title:
-                                title = title.split(" until ", 1)[0]
-                            elif " to " in title:
-                                title = title.split(" to ", 1)[0]
-                                if " from " in title:
-                                    title = title.replace(" from ", " ", 1)
-                            until_part = rel.split(" until ", 1)[1]
-                            result = f"{title} until {until_part}"
-                        else:
-                            result = f"{title} — {rel}"
-                else:
-                    result = dis[0].get("title") or "Disruption"
+                raw_title = dis[0].get("title") or "Disruption"
+                title = dis[0].get("title_clean") or raw_title
+                rel = dis[0].get("period_relative")
+                result = title
+                if rel:
+                    import re
+                    date_range_pattern = r'from\s+\w+.*?\s+(?:to|until)\s+\w+.*?(?:\s|$)'
+                    if (rel.startswith("from ") and " until " in rel and
+                            re.search(date_range_pattern, raw_title, re.IGNORECASE)):
+                        if " until " in title:
+                            title = title.split(" until ", 1)[0]
+                        elif " to " in title:
+                            title = title.split(" to ", 1)[0]
+                            if " from " in title:
+                                title = title.replace(" from ", " ", 1)
+                        until_part = rel.split(" until ", 1)[1]
+                        result = f"{title} until {until_part}"
+                    else:
+                        result = f"{title} — {rel}"
 
                 if len(result) > 255:
                     result = result[:252] + "..."
@@ -204,6 +195,5 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
             "disruptions": disruptions,
             "total_disruptions": len(dis),
             "period_relative": disruptions[0].get("period_relative") if disruptions else None,
-            "simplified": self._simplified,
         }
         return attr

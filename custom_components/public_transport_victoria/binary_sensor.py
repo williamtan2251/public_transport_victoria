@@ -1,9 +1,8 @@
 """Binary sensors for Public Transport Victoria disruptions."""
-import datetime
 import logging
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 from homeassistant.const import ATTR_ATTRIBUTION
 
 from .const import ATTRIBUTION, DOMAIN
@@ -16,10 +15,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
     connector = entry_data["connector"]
 
-    # Reuse the current disruptions coordinator from sensors if available
-    # If not available, we simply won't create the binary sensor here.
-    # For simplicity, rely on the count/detail sensors' coordinator to exist.
-    # Users who disable planned sensors still have current coordinator.
     from .sensor import PublicTransportVictoriaGlobalCoordinator
 
     if "coordinator" not in entry_data:
@@ -33,34 +28,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 class PTVCurrentDisruptionsBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor that is on when there are current disruptions."""
 
-    def __init__(self, coordinator):
+    def __init__(self, coordinator: DataUpdateCoordinator):
+        """Initialize the binary sensor."""
         super().__init__(coordinator)
-
-    @property
-    def is_on(self):
-        dis = (self.coordinator.data or {}).get("disruptions_current") or []
-        return bool(dis)
-
-    @property
-    def name(self):
-        return "{} line current disruption active".format(self.coordinator.connector.route_name)
-
-    @property
-    def unique_id(self):
-        return "{}-current-disruptions-binary".format(self.coordinator.connector.route)
-
-    @property
-    def extra_state_attributes(self):
-        return {ATTR_ATTRIBUTION: ATTRIBUTION}
-
-    @property
-    def device_info(self):
-        return {
+        self._attr_name = f"{self.coordinator.connector.route_name} line current disruption active"
+        self._attr_unique_id = f"{self.coordinator.connector.route}-current-disruptions-binary"
+        self._attr_icon = "mdi:alert"
+        self._attr_device_info = {
             "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
-            "name": "{} line".format(self.coordinator.connector.route_name),
+            "name": f"{self.coordinator.connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
         }
 
     @property
-    def icon(self):
-        return "mdi:alert"
+    def is_on(self) -> bool:
+        """Return True if there are current disruptions."""
+        dis = (self.coordinator.data or {}).get("disruptions_current") or []
+        return bool(dis)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return the state attributes."""
+        return {ATTR_ATTRIBUTION: ATTRIBUTION}

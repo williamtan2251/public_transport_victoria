@@ -17,9 +17,11 @@ from .const import (
     CONF_STOP_NAME, 
     DOMAIN
 )
+ 
 from .PublicTransportVictoria.public_transport_victoria import Connector
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Public Transport Victoria."""
@@ -27,6 +29,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
+
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
@@ -160,9 +163,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             try:
-                # Pass route_id to async_stops
                 self.stops = await self.connector.async_stops(
-                    self.data[CONF_ROUTE]  # route_id
+                    self.data[CONF_ROUTE]
                 )
 
                 self.data[CONF_DIRECTION] = user_input[CONF_DIRECTION]
@@ -214,3 +216,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class CannotConnect(exceptions.HomeAssistantError):
     """Error to indicate we cannot connect."""
+
+
+ 

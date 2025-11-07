@@ -193,10 +193,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.data[CONF_STOP] = user_input[CONF_STOP]
                 self.data[CONF_STOP_NAME] = self.stops[user_input[CONF_STOP]]
 
-                title = "{} line to {} from {}".format(
+                title = "{} line: {} to {}".format(
                     self.data[CONF_ROUTE_NAME],
+                    self.data[CONF_STOP_NAME],
                     self.data[CONF_DIRECTION_NAME],
-                    self.data[CONF_STOP_NAME]
                 )
 
                 return self.async_create_entry(title=title, data=self.data)

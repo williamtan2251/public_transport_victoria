@@ -38,17 +38,23 @@ class Connector:
         self.route_name = route_name
         self.direction_name = direction_name
         self.stop_name = stop_name
+        
+        # Initialize attributes to empty lists
+        self.departures = []
         self.disruptions_current = []
         self.disruptions_planned = []
+        
+        # Initialize run cache
         self._run_cache = {}
         self._run_cache_timestamp = None
-
-    async def _init(self):
-        """Async Init Public Transport Victoria connector."""
-        self.departures_path = DEPARTURES_PATH.format(
-            self.route_type, self.stop, self.route, self.direction, MAX_RESULTS
-        )
-        await self.async_update()
+        
+        # Set up departures path if all required parameters are available
+        if all([self.route_type, self.stop, self.route, self.direction is not None]):
+            self.departures_path = DEPARTURES_PATH.format(
+                self.route_type, self.stop, self.route, self.direction, MAX_RESULTS
+            )
+        else:
+            self.departures_path = None
 
     async def async_route_types(self):
         """Get route types from Public Transport Victoria API."""
@@ -122,6 +128,11 @@ class Connector:
 
     async def async_update(self):
         """Update the departure information."""
+        if not self.departures_path:
+            _LOGGER.warning("Cannot update departures - missing required parameters")
+            self.departures = []
+            return
+
         url = build_URL(self.id, self.api_key, self.departures_path)
 
         async with aiohttp.ClientSession() as session:
@@ -186,6 +197,9 @@ class Connector:
             # Sort and cap to first 5 for UI
             deduped.sort(key=lambda x: x["_dep_utc"]) 
             self.departures = deduped[:5]
+        else:
+            # If API call fails, ensure departures is an empty list
+            self.departures = []
 
         for departure in self.departures:
             _LOGGER.debug(departure)
@@ -344,6 +358,12 @@ class Connector:
                 self.disruptions_current = filtered
             else:
                 self.disruptions_planned = filtered
+        else:
+            # If API call fails, ensure disruptions are empty lists
+            if disruption_status == 0:
+                self.disruptions_current = []
+            else:
+                self.disruptions_planned = []
 
         if disruption_status == 0:
             for disruption in self.disruptions_current:

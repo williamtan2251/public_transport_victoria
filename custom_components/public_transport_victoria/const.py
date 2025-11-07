@@ -10,3 +10,4 @@ CONF_STOP = "stop"
 CONF_STOP_NAME = "stop_name"
 DOMAIN = "public_transport_victoria"
 ATTRIBUTION = "Licensed from Public Transport Victoria under a Creative Commons Attribution 4.0 International Licence"
+DEFAULT_DETAILS_LIMIT = 5

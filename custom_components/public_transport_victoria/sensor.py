@@ -68,7 +68,7 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
         self._attr_name = f"{self._connector.route_name} line {self._connector.stop_name} to {self._connector.direction_name} {self._number}"
         self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-dep-{self._number}"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, str(self._connector.route))},
+            "identifiers": {(DOMAIN, f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}")},
             "name": f"{self._connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
             "model": f"{self._connector.stop_name} to {self._connector.direction_name}",
@@ -113,7 +113,7 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
         self._attr_name = f"Disruption {self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name}"
         self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-detail"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
+            "identifiers": {(DOMAIN, f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}")},
             "name": f"{self.coordinator.connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
             "model": f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name}",

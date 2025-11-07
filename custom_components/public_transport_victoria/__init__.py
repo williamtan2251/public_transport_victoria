@@ -2,7 +2,6 @@
 import asyncio
 import logging
 
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_ID
 from homeassistant.core import HomeAssistant
@@ -13,20 +12,15 @@ from .const import (
 )
 from .PublicTransportVictoria.public_transport_victoria import Connector
 
-
 # Define the logger
 _LOGGER = logging.getLogger(__name__)
 
-
 PLATFORMS = ["sensor", "binary_sensor"]
-
 
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the Public Transport Victoria component."""
     hass.data.setdefault(DOMAIN, {})
-
     return True
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Public Transport Victoria from a config entry."""
@@ -43,16 +37,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_DIRECTION_NAME],
         entry.data[CONF_STOP_NAME],
     )
-    await connector._init()
-
+    
+    # REMOVED: await connector._init() - This method no longer exists
+    
     hass.data[DOMAIN][entry.entry_id] = {"connector": connector}
 
     # Use the new async_forward_entry_setups method
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
@@ -65,6 +58,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
     )
     if unload_ok:
+        # Close the connector session when unloading
+        connector = hass.data[DOMAIN][entry.entry_id]["connector"]
+        await connector.close()
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok

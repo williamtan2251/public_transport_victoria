@@ -31,8 +31,8 @@ class PTVCurrentDisruptionsBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def __init__(self, coordinator: DataUpdateCoordinator):
         """Initialize the binary sensor."""
         super().__init__(coordinator)
-        self._attr_name = f"{self.coordinator.connector.route_name} line current disruption active"
-        self._attr_unique_id = f"{self.coordinator.connector.route}-current-disruptions-binary"
+        self._attr_name = f"{self.coordinator.connector.route_name} line to {self.coordinator.connector.direction_name} from {self.coordinator.connector.stop_name} disruptions active"
+        self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions"
         self._attr_icon = "mdi:alert"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},

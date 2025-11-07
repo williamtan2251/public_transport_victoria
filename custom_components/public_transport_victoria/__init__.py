@@ -1,14 +1,13 @@
 """Public Transport Victoria integration."""
 import asyncio
 import logging
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_ID
 from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_DIRECTION, CONF_DIRECTION_NAME, CONF_ROUTE, CONF_ROUTE_NAME,
-    CONF_ROUTE_TYPE, CONF_ROUTE_TYPE_NAME, CONF_STOP, CONF_STOP_NAME, DOMAIN
+    CONF_ROUTE_TYPE, CONF_ROUTE_TYPE_NAME, CONF_STOP, CONF_STOP_NAME, DOMAIN,
 )
 from .PublicTransportVictoria.public_transport_victoria import Connector
 
@@ -38,8 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_STOP_NAME],
     )
     
-    # REMOVED: await connector._init() - This method no longer exists
-    
+    # Initialize the connector (no _init method needed anymore)
     hass.data[DOMAIN][entry.entry_id] = {"connector": connector}
 
     # Use the new async_forward_entry_setups method
@@ -58,9 +56,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
     )
     if unload_ok:
-        # Close the connector session when unloading
-        connector = hass.data[DOMAIN][entry.entry_id]["connector"]
-        await connector.close()
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok

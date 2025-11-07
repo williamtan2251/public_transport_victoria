@@ -5,15 +5,18 @@ import datetime
 import hmac
 import logging
 from hashlib import sha1
+
 from homeassistant.util.dt import get_time_zone
+ 
+
 
 BASE_URL = "https://timetableapi.ptv.vic.gov.au"
 DEPARTURES_PATH = "/v3/departures/route_type/{}/stop/{}/route/{}?direction_id={}&max_results={}"
 DIRECTIONS_PATH = "/v3/directions/route/{}"
+MAX_RESULTS = 10
 ROUTE_TYPES_PATH = "/v3/route_types"
 ROUTES_PATH = "/v3/routes?route_types={}"
 STOPS_PATH = "/v3/stops/route/{}/route_type/{}"
-MAX_RESULTS = 10
 DISRUPTIONS_PATH = "/v3/disruptions?route_ids={}&route_types={}&disruption_status={}"
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,23 +41,15 @@ class Connector:
         self.route_name = route_name
         self.direction_name = direction_name
         self.stop_name = stop_name
-        
-        # Initialize attributes to empty lists
-        self.departures = []
         self.disruptions_current = []
         self.disruptions_planned = []
-        
-        # Initialize run cache
-        self._run_cache = {}
-        self._run_cache_timestamp = None
-        
-        # Set up departures path if all required parameters are available
-        if all([self.route_type, self.stop, self.route, self.direction is not None]):
-            self.departures_path = DEPARTURES_PATH.format(
-                self.route_type, self.stop, self.route, self.direction, MAX_RESULTS
-            )
-        else:
-            self.departures_path = None
+
+    async def _init(self):
+        """Async Init Public Transport Victoria connector."""
+        self.departures_path = DEPARTURES_PATH.format(
+            self.route_type, self.stop, self.route, self.direction, MAX_RESULTS
+        )
+        await self.async_update()
 
     async def async_route_types(self):
         """Get route types from Public Transport Victoria API."""
@@ -128,11 +123,6 @@ class Connector:
 
     async def async_update(self):
         """Update the departure information."""
-        if not self.departures_path:
-            _LOGGER.warning("Cannot update departures - missing required parameters")
-            self.departures = []
-            return
-
         url = build_URL(self.id, self.api_key, self.departures_path)
 
         async with aiohttp.ClientSession() as session:
@@ -142,13 +132,6 @@ class Connector:
             response = await response.json()
             _LOGGER.debug(response)
             now_utc = datetime.datetime.now(datetime.timezone.utc)
-            
-            # Clear run cache if it's from a previous update (older than 5 minutes)
-            if (self._run_cache_timestamp is None or 
-                (now_utc - self._run_cache_timestamp).total_seconds() > 300):
-                self._run_cache.clear()
-                self._run_cache_timestamp = now_utc
-            
             # Build list with computed local string and keep parsed UTC for filtering
             departures_raw = []
             for r in response["departures"]:
@@ -161,24 +144,11 @@ class Connector:
                     continue
                 r["_dep_utc"] = dep_utc
                 r["departure"] = convert_utc_to_local(utc_str, self.hass)
-                
-                # Get express status with caching
-                run_id = r.get("run_id")
-                if run_id:
-                    if run_id in self._run_cache:
-                        run_info = self._run_cache[run_id]
-                    else:
-                        run_info = await self.async_run(run_id)
-                        if run_info:
-                            self._run_cache[run_id] = run_info
-                    
-                    if run_info:
-                        r["is_express"] = run_info.get("express_stop_count", 0) > 0
-                    else:
-                        r["is_express"] = None
+                run_info = await self.async_run(r["run_id"])
+                if run_info:
+                    r["is_express"] = run_info.get("express_stop_count", 0) > 0
                 else:
                     r["is_express"] = None
-                    
                 departures_raw.append(r)
 
             # Keep only future departures
@@ -197,9 +167,6 @@ class Connector:
             # Sort and cap to first 5 for UI
             deduped.sort(key=lambda x: x["_dep_utc"]) 
             self.departures = deduped[:5]
-        else:
-            # If API call fails, ensure departures is an empty list
-            self.departures = []
 
         for departure in self.departures:
             _LOGGER.debug(departure)
@@ -358,12 +325,6 @@ class Connector:
                 self.disruptions_current = filtered
             else:
                 self.disruptions_planned = filtered
-        else:
-            # If API call fails, ensure disruptions are empty lists
-            if disruption_status == 0:
-                self.disruptions_current = []
-            else:
-                self.disruptions_planned = []
 
         if disruption_status == 0:
             for disruption in self.disruptions_current:
@@ -376,12 +337,9 @@ class Connector:
 
     async def async_update_all(self):
         """Update departures and both disruption sets together."""
-        await asyncio.gather(
-            self.async_update(),
-            self.async_update_disruptions(0),
-            self.async_update_disruptions(1),
-            return_exceptions=True
-        )
+        await self.async_update()
+        await self.async_update_disruptions(0)
+        await self.async_update_disruptions(1)
 
 def _parse_utc(utc_str):
     """Parse UTC string to datetime, return epoch if parsing fails."""

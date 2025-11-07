@@ -37,7 +37,7 @@ class PTVCurrentDisruptionsBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_icon = "mdi:alert"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
-            "name": f"{connector.route_name} line",
+            "name": f"{connector.route_name} line {connector.stop_name} to {connector.direction_name}",
             "manufacturer": "Public Transport Victoria",
             "model": f"{connector.stop_name} to {connector.direction_name}",
         }

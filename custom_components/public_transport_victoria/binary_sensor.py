@@ -32,7 +32,7 @@ class PTVCurrentDisruptionsBinarySensor(CoordinatorEntity, BinarySensorEntity):
         """Initialize the binary sensor."""
         super().__init__(coordinator)
         connector = self.coordinator.connector
-        self._attr_name = f"{connector.stop_name} to {connector.direction_name} disruptions active"
+        self._attr_name = f"Active Disruption {connector.stop_name} to {connector.direction_name}"
         self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-disruptions"
         self._attr_icon = "mdi:alert"
         self._attr_device_info = {

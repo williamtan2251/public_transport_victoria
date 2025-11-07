@@ -201,6 +201,20 @@ class Connector:
         for departure in self.departures:
             _LOGGER.debug(departure)
 
+    async def async_run(self, run_id):
+        """Get run information from Public Transport Victoria API."""
+        url = build_URL(self.id, self.api_key, f"/v3/runs/{run_id}")
+
+        async with aiohttp.ClientSession() as session:
+            response = await session.get(url)
+
+        if response is not None and response.status == 200:
+            response = await response.json()
+            _LOGGER.debug(response)
+            if response.get("runs") and len(response["runs"]) > 0:
+                return response["runs"][0]
+        return None
+
     async def async_update_disruptions(self, disruption_status: int):
         """Update disruptions for the configured route.
         disruption_status: 0 = current, 1 = planned
@@ -435,20 +449,6 @@ def _relative_period(from_local, to_local, hass):
     except Exception:
         return None
     return None
-
-    async def async_run(self, run_id):
-        """Get run information from Public Transport Victoria API."""
-        url = build_URL(self.id, self.api_key, f"/v3/runs/{run_id}")
-
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
-
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            if response.get("runs") and len(response["runs"]) > 0:
-                return response["runs"][0]
-        return None
 
 def build_URL(id, api_key, request):
     request = request + ('&' if ('?' in request) else '?')

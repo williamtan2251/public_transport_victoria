@@ -1,56 +1,30 @@
 """Platform for sensor integration."""
 
-from __future__ import annotations
-
 import datetime
 import logging
-import re
-from typing import Any, cast
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
     DataUpdateCoordinator,
+    CoordinatorEntity,
 )
 from homeassistant.const import ATTR_ATTRIBUTION
-from .const import ATTRIBUTION, DOMAIN, DEFAULT_DETAILS_LIMIT, CONF_ROUTE, CONF_DIRECTION, CONF_STOP
+from .const import ATTRIBUTION, DOMAIN, DEFAULT_DETAILS_LIMIT
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = datetime.timedelta(minutes=1)
-
-# Entity descriptions for better organization
-DEPARTURE_SENSOR_DESCRIPTION = SensorEntityDescription(
-    key="departure",
-    icon="mdi:clock-outline",
-    device_class=None,  # Not a standard device class
-)
-
-DISRUPTION_COUNT_SENSOR_DESCRIPTION = SensorEntityDescription(
-    key="disruption_count",
-    icon="mdi:alert",
-    entity_category=EntityCategory.DIAGNOSTIC,
-)
-
-DISRUPTION_DETAIL_SENSOR_DESCRIPTION = SensorEntityDescription(
-    key="disruption_detail",
-    icon="mdi:note-text",
-    entity_category=EntityCategory.DIAGNOSTIC,
-)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     """Add sensors for passed config_entry in HA."""
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
     connector = entry_data["connector"]
-    config_data = config_entry.data
 
-    # Read options with fallbacks
-    details_limit = config_entry.options.get("details_limit", DEFAULT_DETAILS_LIMIT)
-    departures_limit = config_entry.options.get("departures_limit", 5)
-    planned_enabled = config_entry.options.get("planned_disruptions", True)
-    simplified_disruptions = config_entry.options.get("simplified_disruptions", True)
+    # Read options, falling back to defaults
+    details_limit = DEFAULT_DETAILS_LIMIT
+    planned_enabled = True
 
-    # Create or get global coordinator
+    # Create the coordinator to manage polling
+    # One global coordinator that updates all data once per minute
     if "coordinator" not in entry_data:
         entry_data["coordinator"] = PublicTransportVictoriaGlobalCoordinator(hass, connector)
     coordinator = entry_data["coordinator"]
@@ -58,45 +32,21 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()
 
-    entities: list[BasePTVSensor] = []
+    # Create sensors for the first 5 departures
+    new_devices = [PublicTransportVictoriaSensor(coordinator, i) for i in range(5)]
 
-    # Create departure sensors
-    entities.extend([
-        DepartureSensor(coordinator, i, connector) 
-        for i in range(departures_limit)
-    ])
-
-    # Create disruption sensors
-    entities.append(DisruptionCountSensor(coordinator, connector, current=True))
-    
-    if simplified_disruptions:
-        entities.append(DisruptionDetailSensor(
-            coordinator, connector, current=True, 
-            details_limit=details_limit, simplified=True
-        ))
-    
-    entities.append(DisruptionDetailSensor(
-        coordinator, connector, current=True, 
-        details_limit=details_limit, simplified=False
-    ))
-
-    # Planned disruptions (optional)
+    # Create disruptions sensors
+    # Current
+    new_devices.append(PublicTransportVictoriaDisruptionsCountSensor(coordinator, current=True))
+    new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=True, details_limit=details_limit, simplified=False))
+    new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=True, details_limit=details_limit, simplified=True))
+    # Planned
     if planned_enabled:
-        entities.append(DisruptionCountSensor(coordinator, connector, current=False))
-        
-        if simplified_disruptions:
-            entities.append(DisruptionDetailSensor(
-                coordinator, connector, current=False, 
-                details_limit=details_limit, simplified=True
-            ))
-        
-        entities.append(DisruptionDetailSensor(
-            coordinator, connector, current=False, 
-            details_limit=details_limit, simplified=False
-        ))
+        new_devices.append(PublicTransportVictoriaDisruptionsCountSensor(coordinator, current=False))
+        new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=False, details_limit=details_limit, simplified=False))
+        new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=False, details_limit=details_limit, simplified=True))
 
-    async_add_entities(entities)
-
+    async_add_entities(new_devices)
 
 class PublicTransportVictoriaGlobalCoordinator(DataUpdateCoordinator):
     """Class to manage fetching Public Transport Victoria data."""
@@ -104,256 +54,221 @@ class PublicTransportVictoriaGlobalCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, connector):
         """Initialize the coordinator."""
         self.connector = connector
-        self._last_update_success = True
-        
         super().__init__(
             hass,
             _LOGGER,
-            name=f"PTV {connector.route_name}",
-            update_interval=SCAN_INTERVAL,
+            name="Public Transport Victoria (Global)",
+            update_interval=datetime.timedelta(minutes=1),
         )
 
     async def _async_update_data(self):
         """Fetch all data from Public Transport Victoria."""
-        try:
-            _LOGGER.debug("Fetching all data from Public Transport Victoria API for %s", self.connector.route_name)
-            await self.connector.async_update_all()
-            self._last_update_success = True
-            
-            return {
-                "departures": self.connector.departures or [],
-                "disruptions_current": self.connector.disruptions_current or [],
-                "disruptions_planned": self.connector.disruptions_planned or [],
-                "last_update": datetime.datetime.now().isoformat(),
-            }
-        except Exception as err:
-            self._last_update_success = False
-            _LOGGER.error("Error fetching PTV data: %s", err)
-            raise
+        _LOGGER.debug("Fetching all data from Public Transport Victoria API.")
+        await self.connector.async_update_all()
+        # Return a bundle used by all sensors
+        return {
+            "departures": self.connector.departures,
+            "disruptions_current": self.connector.disruptions_current,
+            "disruptions_planned": self.connector.disruptions_planned,
+        }
 
+class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
+    """Representation of a Public Transport Victoria Sensor."""
 
-class BasePTVSensor(CoordinatorEntity, SensorEntity):
-    """Base class for PTV sensors with common functionality."""
-
-    def __init__(self, coordinator, connector):
-        """Initialize the base sensor."""
+    def __init__(self, coordinator, number):
+        """Initialize the sensor."""
         super().__init__(coordinator)
-        self._connector = connector
-        self._attr_attribution = ATTRIBUTION
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, str(self._connector.route))},
-            name=f"{self._connector.route_name} Line",
-            manufacturer="Public Transport Victoria",
-            model=f"{self._connector.route_name} to {self._connector.direction_name}",
-            via_device=(DOMAIN, "ptv_public_transport_victoria"),
-        )
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return (
-            self.coordinator.last_update_success
-            and self.coordinator.data is not None
-            and super().available
-        )
-
-
-class DepartureSensor(BasePTVSensor):
-    """Representation of a departure sensor."""
-
-    def __init__(self, coordinator, number, connector):
-        """Initialize the departure sensor."""
-        super().__init__(coordinator, connector)
-        self.entity_description = DEPARTURE_SENSOR_DESCRIPTION
         self._number = number
-        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-dep-{number}"
-        self._attr_name = f"{connector.route_name} to {connector.direction_name} #{number + 1}"
+        self._connector = coordinator.connector
 
     @property
-    def state(self) -> str:
+    def state(self):
         """Return the state of the sensor."""
-        deps = self._get_departures()
+        deps = (self.coordinator.data or {}).get("departures", [])
         if len(deps) > self._number:
             return deps[self._number].get("departure", "No data")
         return "No data"
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
-        deps = self._get_departures()
-        if len(deps) > self._number:
-            attr = dict(deps[self._number])
-            attr[ATTR_ATTRIBUTION] = ATTRIBUTION
-            attr["departure_number"] = self._number + 1
-            return attr
-        return {}
-
-    def _get_departures(self) -> list[dict]:
-        """Safe method to get departures data."""
-        if not self.coordinator.data:
-            return []
-        return self.coordinator.data.get("departures", [])
+    def name(self):
+        """Return the name of the sensor."""
+        return "{} line to {} from {} {}".format(
+            self._connector.route_name,
+            self._connector.direction_name,
+            self._connector.stop_name,
+            self._number,
+        )
 
     @property
-    def icon(self) -> str:
-        """Return dynamic icon based on route type."""
-        route_type = self._connector.route_type
-        icon_map = {
-            0: "mdi:train",      # Train
-            1: "mdi:tram",       # Tram
-            2: "mdi:bus",        # Bus
-            3: "mdi:ferry",      # V/Line (using ferry as proxy)
-            4: "mdi:bus",        # Night Bus
+    def unique_id(self):
+        """Return Unique ID string."""
+        return "{}-{}-{}-dep-{}".format(
+            self._connector.route,
+            self._connector.direction,
+            self._connector.stop,
+            self._number,
+        )
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes of the sensor."""
+        deps = (self.coordinator.data or {}).get("departures", [])
+        if len(deps) > self._number:
+            dep = deps[self._number]
+            # Extract relevant attributes for display
+            attr = {
+                "estimated_departure_utc": dep.get("estimated_departure_utc"),
+                "scheduled_departure_utc": dep.get("scheduled_departure_utc"),
+                "is_express": dep.get("is_express"),
+                "run_id": dep.get("run_id"),
+                ATTR_ATTRIBUTION: ATTRIBUTION
+            }
+            return attr
+        return {ATTR_ATTRIBUTION: ATTRIBUTION}
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, str(self._connector.route))},
+            "name": "{} line".format(self._connector.route_name),
+            "manufacturer": "Public Transport Victoria",
+            "model": "{} to {} from {}".format(self._connector.route_name, self._connector.direction_name, self._connector.stop_name),
         }
-        return icon_map.get(route_type, "mdi:transit-connection")
 
+    @property
+    def icon(self):
+        return "mdi:train" if self._connector.route_type == 0 else (
+            "mdi:tram" if self._connector.route_type == 1 else (
+                "mdi:bus" if self._connector.route_type == 2 else "mdi:transit-connection"
+            )
+        )
 
-class DisruptionCountSensor(BasePTVSensor):
+class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
     """Representation of a disruptions count sensor."""
 
-    def __init__(self, coordinator, connector, current: bool):
-        """Initialize the disruption count sensor."""
-        super().__init__(coordinator, connector)
-        self.entity_description = DISRUPTION_COUNT_SENSOR_DESCRIPTION
+    def __init__(self, coordinator, current: bool):
+        super().__init__(coordinator)
         self._current = current
-        disruption_type = "current" if current else "planned"
-        self._attr_unique_id = f"{connector.route}-{disruption_type}-disruptions-count"
-        self._attr_name = f"{connector.route_name} {disruption_type.title()} Disruption Count"
 
     @property
-    def state(self) -> int:
-        """Return the number of disruptions."""
-        disruptions = self._get_disruptions()
-        return len(disruptions)
+    def state(self):
+        data = self.coordinator.data or {}
+        key = "disruptions_current" if self._current else "disruptions_planned"
+        dis = data.get(key)
+        return len(dis or [])
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
-        disruptions = self._get_disruptions()
+    def name(self):
+        label = "current disruptions" if self._current else "planned disruptions"
+        return "{} line {}".format(self.coordinator.connector.route_name, label)
+
+    @property
+    def unique_id(self):
+        return "{}-{}-{}".format(self.coordinator.connector.route, "current" if self._current else "planned", "disruptions-count")
+
+    @property
+    def extra_state_attributes(self):
+        attr = {ATTR_ATTRIBUTION: ATTRIBUTION}
+        return attr
+
+    @property
+    def device_info(self):
         return {
-            ATTR_ATTRIBUTION: ATTRIBUTION,
-            "disruption_type": "current" if self._current else "planned",
-            "disruption_titles": [d.get("title", "Unknown") for d in disruptions[:5]],  # First 5 titles
+            "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
+            "name": "{} line".format(self.coordinator.connector.route_name),
+            "manufacturer": "Public Transport Victoria",
         }
 
-    def _get_disruptions(self) -> list[dict]:
-        """Safe method to get disruptions data."""
-        if not self.coordinator.data:
-            return []
-        key = "disruptions_current" if self._current else "disruptions_planned"
-        return self.coordinator.data.get(key, [])
-
     @property
-    def icon(self) -> str:
-        """Return dynamic icon."""
-        return "mdi:alert-octagon" if self._current else "mdi:calendar-alert"
+    def icon(self):
+        return "mdi:alert" if self._current else "mdi:calendar-clock"
 
-
-class DisruptionDetailSensor(BasePTVSensor):
+class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
     """Representation of a disruptions detail sensor."""
 
-    def __init__(self, coordinator, connector, current: bool, details_limit: int, simplified: bool = False):
-        """Initialize the disruption detail sensor."""
-        super().__init__(coordinator, connector)
-        self.entity_description = DISRUPTION_DETAIL_SENSOR_DESCRIPTION
+    def __init__(self, coordinator, current: bool, details_limit: int, simplified: bool = False):
+        super().__init__(coordinator)
         self._current = current
         self._details_limit = details_limit
         self._simplified = simplified
-        
-        disruption_type = "current" if current else "planned"
-        suffix = "simplified" if simplified else "detailed"
-        self._attr_unique_id = f"{connector.route}-{disruption_type}-disruptions-{suffix}"
-        
-        name_suffix = "Simplified" if simplified else "Detailed"
-        self._attr_name = f"{connector.route_name} {disruption_type.title()} Disruptions {name_suffix}"
 
     @property
-    def state(self) -> str:
-        """Return the state with first disruption details."""
+    def state(self):
+        # A brief state: first disruption title, else 'No disruptions'
         try:
-            disruptions = self._get_disruptions()
-            if not disruptions:
-                return "No disruptions"
+            data = self.coordinator.data or {}
+            key = "disruptions_current" if self._current else "disruptions_planned"
+            dis = data.get(key) or []
+            if len(dis) > 0:
+                if self._simplified:
+                    raw_title = dis[0].get("title") or "Disruption"
+                    title = dis[0].get("title_clean") or raw_title
+                    rel = dis[0].get("period_relative")
+                    result = title
+                    if rel:
+                        import re
+                        date_range_pattern = r'from\s+\w+.*?\s+(?:to|until)\s+\w+.*?(?:\s|$)'
+                        if (rel.startswith("from ") and " until " in rel and
+                                re.search(date_range_pattern, raw_title, re.IGNORECASE)):
+                            if " until " in title:
+                                title = title.split(" until ", 1)[0]
+                            elif " to " in title:
+                                title = title.split(" to ", 1)[0]
+                                if " from " in title:
+                                    title = title.replace(" from ", " ", 1)
+                            until_part = rel.split(" until ", 1)[1]
+                            result = f"{title} until {until_part}"
+                        else:
+                            result = f"{title} — {rel}"
+                else:
+                    result = dis[0].get("title") or "Disruption"
 
-            if self._simplified:
-                return self._get_simplified_state(disruptions[0])
-            else:
-                title = disruptions[0].get("title", "Disruption")
-                return self._truncate_state(title)
-                
-        except Exception as err:
-            _LOGGER.error("Error in disruption sensor state: %s", err)
+                # Truncate to reasonable length for sensor state (max 255 chars)
+                if len(result) > 255:
+                    result = result[:252] + "..."
+
+                return result
+            return "No disruptions"
+        except Exception as e:
+            _LOGGER.error("Error in disruption sensor state: %s", e)
             return "Error"
 
-    def _get_simplified_state(self, disruption: dict) -> str:
-        """Get simplified state with cleaned up title and date."""
-        raw_title = disruption.get("title", "Disruption")
-        title = disruption.get("title_clean", raw_title)
-        rel = disruption.get("period_relative", "")
-        
-        if not rel:
-            return self._truncate_state(title)
-        
-        # Handle date range formatting
-        date_range_pattern = r'from\s+\w+.*?\s+(?:to|until)\s+\w+.*?(?:\s|$)'
-        if (rel.startswith("from ") and " until " in rel and
-                re.search(date_range_pattern, raw_title, re.IGNORECASE)):
-            
-            # Clean up the title
-            if " until " in title:
-                title = title.split(" until ", 1)[0]
-            elif " to " in title:
-                title = title.split(" to ", 1)[0]
-                if " from " in title:
-                    title = title.replace(" from ", " ", 1)
-            
-            # Extract the until part
-            until_part = rel.split(" until ", 1)[1]
-            result = f"{title} until {until_part}"
-        else:
-            result = f"{title} — {rel}"
-        
-        return self._truncate_state(result)
-
-    def _truncate_state(self, text: str) -> str:
-        """Truncate state text to 255 characters."""
-        if len(text) > 255:
-            return text[:252] + "..."
-        return text
+    @property
+    def name(self):
+        base = "current" if self._current else "planned"
+        label = f"{base} disruption details"
+        if self._simplified:
+            label += " - simplified"
+        return "{} line {}".format(self.coordinator.connector.route_name, label)
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return comprehensive disruption attributes."""
-        disruptions = self._get_disruptions()
-        limited_disruptions = disruptions[:self._details_limit]
-        
+    def unique_id(self):
+        suffix = "-simplified" if self._simplified else ""
+        return "{}-{}-{}{}".format(self.coordinator.connector.route, "current" if self._current else "planned", "disruptions-detail", suffix)
+
+    @property
+    def extra_state_attributes(self):
+        data = self.coordinator.data or {}
+        key = "disruptions_current" if self._current else "disruptions_planned"
+        dis = data.get(key) or []
+        disruptions = dis[: self._details_limit]
         attr = {
             ATTR_ATTRIBUTION: ATTRIBUTION,
-            "disruption_type": "current" if self._current else "planned",
-            "total_disruptions": len(disruptions),
-            "displayed_disruptions": len(limited_disruptions),
-            "simplified_format": self._simplified,
+            "disruptions": disruptions,
+            "total_disruptions": len(dis),
+            "period_relative": disruptions[0].get("period_relative") if disruptions else None,
+            "simplified": self._simplified,
         }
-        
-        # Add detailed disruption info
-        if limited_disruptions:
-            attr["disruptions"] = limited_disruptions
-            attr["latest_update"] = limited_disruptions[0].get("last_updated")
-            
         return attr
 
-    def _get_disruptions(self) -> list[dict]:
-        """Safe method to get disruptions data."""
-        if not self.coordinator.data:
-            return []
-        key = "disruptions_current" if self._current else "disruptions_planned"
-        return self.coordinator.data.get(key, [])
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
+            "name": "{} line".format(self.coordinator.connector.route_name),
+            "manufacturer": "Public Transport Victoria",
+        }
 
     @property
-    def icon(self) -> str:
-        """Return dynamic icon."""
-        return "mdi:text-box-multiple" if self._simplified else "mdi:text-box"
+    def icon(self):
+        return "mdi:note-text"

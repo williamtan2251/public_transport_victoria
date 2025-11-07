@@ -10,6 +10,8 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.const import ATTR_ATTRIBUTION
 from .const import ATTRIBUTION, DOMAIN, DEFAULT_DETAILS_LIMIT
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = datetime.timedelta(minutes=1)
@@ -48,6 +50,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     async_add_entities(new_devices)
 
+
 class PublicTransportVictoriaGlobalCoordinator(DataUpdateCoordinator):
     """Class to manage fetching Public Transport Victoria data."""
 
@@ -71,6 +74,7 @@ class PublicTransportVictoriaGlobalCoordinator(DataUpdateCoordinator):
             "disruptions_current": self.connector.disruptions_current,
             "disruptions_planned": self.connector.disruptions_planned,
         }
+
 
 class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
     """Representation of a Public Transport Victoria Sensor."""
@@ -114,17 +118,10 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
         """Return the state attributes of the sensor."""
         deps = (self.coordinator.data or {}).get("departures", [])
         if len(deps) > self._number:
-            dep = deps[self._number]
-            # Extract relevant attributes for display
-            attr = {
-                "estimated_departure_utc": dep.get("estimated_departure_utc"),
-                "scheduled_departure_utc": dep.get("scheduled_departure_utc"),
-                "is_express": dep.get("is_express"),
-                "run_id": dep.get("run_id"),
-                ATTR_ATTRIBUTION: ATTRIBUTION
-            }
+            attr = deps[self._number]
+            attr[ATTR_ATTRIBUTION] = ATTRIBUTION
             return attr
-        return {ATTR_ATTRIBUTION: ATTRIBUTION}
+        return {}
 
     @property
     def device_info(self):
@@ -142,6 +139,7 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
                 "mdi:bus" if self._connector.route_type == 2 else "mdi:transit-connection"
             )
         )
+
 
 class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
     """Representation of a disruptions count sensor."""
@@ -182,6 +180,7 @@ class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
     @property
     def icon(self):
         return "mdi:alert" if self._current else "mdi:calendar-clock"
+
 
 class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
     """Representation of a disruptions detail sensor."""

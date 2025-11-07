@@ -64,14 +64,15 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
     def __init__(self, coordinator: DataUpdateCoordinator, number: int):
         super().__init__(coordinator)
         self._number = number
-        connector = self.coordinator.connector
-        self._attr_name = f"{connector.route_name} line {connector.stop_name} to {connector.direction_name} {self._number}"
-        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-dep-{self._number}"
+        self._connector = coordinator.connector
+        self._attr_name = f"{self._connector.route_name} line {self._connector.stop_name} to {self._connector.direction_name} {self._number}"
+        self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-dep-{self._number}"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, str(self._connector.route))},
-            "name": f"{connector.route_name} line {connector.stop_name} to {connector.direction_name}",
+            # "identifiers": {(DOMAIN, str(self._connector.route))},
+            "identifiers": {(DOMAIN, f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}")},
+            "name": f"{self._connector.route_name} line {self._connector.stop_name} to {self._connector.direction_name}",
             "manufacturer": "Public Transport Victoria",
-            "model": f"{connector.stop_name} to {connector.direction_name}",
+            "model": f"{self._connector.stop_name} to {self._connector.direction_name}",
         }
 
     @property
@@ -109,15 +110,16 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
 
     def __init__(self, coordinator: DataUpdateCoordinator, details_limit: int):
         super().__init__(coordinator)
-        connector = self.coordinator.connector
+        self._connector = coordinator.connector
         self._details_limit = details_limit
-        self._attr_name = f"Disruption {connector.stop_name} to {connector.direction_name}"
-        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-disruptions-detail"
+        self._attr_name = f"Disruption {self._connector.stop_name} to {self._connector.direction_name}"
+        self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-disruptions-detail"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
-            "name": f"{connector.route_name} line {connector.stop_name} to {connector.direction_name}",
+            # "identifiers": {(DOMAIN, str(self._connector.route))},
+            "identifiers": {(DOMAIN, f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}")},
+            "name": f"{self._connector.route_name} line {self._connector.stop_name} to {self._connector.direction_name}",
             "manufacturer": "Public Transport Victoria",
-            "model": f"{connector.stop_name} to {connector.direction_name}",
+            "model": f"{self._connector.stop_name} to {self._connector.direction_name}",
         }
         self._attr_icon = "mdi:note-text"
 

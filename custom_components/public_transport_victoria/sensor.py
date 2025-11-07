@@ -108,15 +108,17 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
 class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
     """Sensor for the count of current disruptions."""
 
-    def __init__(self, coordinator: DataUpdateCoordinator):
+    def __init__(self, coordinator: DataUpdateCoordinator, number: int):
         super().__init__(coordinator)
-        connector = self.coordinator.connector
-        self._attr_name = f"{connector.route_name} line to {connector.direction_name} from {connector.stop_name} disruptions"
-        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-disruptions-count"
+        self._number = number
+        self._connector = coordinator.connector
+        self._attr_name = f"{self._connector.route_name} line to {self._connector.direction_name} from {self._connector.stop_name} {self._number}"
+        self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-dep-{self._number}"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
-            "name": f"{connector.route_name} line",
+            "identifiers": {(DOMAIN, f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}")},
+            "name": f"{self._connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
+            "model": f"{self._connector.stop_name} to {self._connector.direction_name}",
         }
         self._attr_icon = "mdi:alert"
 
@@ -150,6 +152,7 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
             "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
             "name": f"{connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
+            "model": f"{connector.stop_name} to {connector.direction_name}",
         }
         self._attr_icon = "mdi:note-text"
 

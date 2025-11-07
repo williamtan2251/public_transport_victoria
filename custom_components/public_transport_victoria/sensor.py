@@ -31,8 +31,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Create sensors for the first 5 departures
     new_devices = [PublicTransportVictoriaSensor(coordinator, i) for i in range(5)]
 
-    # Create current disruptions sensors only (no planned disruptions)
-    new_devices.append(PublicTransportVictoriaDisruptionsCountSensor(coordinator))
+    # Create current disruptions sensors
     new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, details_limit=details_limit))
 
     async_add_entities(new_devices)
@@ -104,33 +103,6 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
         if rt == 2:
             return "mdi:bus"
         return "mdi:transit-connection"
-
-class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
-    """Sensor for the count of current disruptions."""
-
-    def __init__(self, coordinator: DataUpdateCoordinator):
-        super().__init__(coordinator)
-        self._attr_name = f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name} disruptions"
-        self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-count"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
-            "name": f"{self.coordinator.connector.route_name} line",
-            "manufacturer": "Public Transport Victoria",
-            "model": f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name}",
-        }
-        self._attr_icon = "mdi:alert"
-
-    @property
-    def state(self):
-        """Return the number of current disruptions."""
-        data = self.coordinator.data or {}
-        dis = data.get("disruptions_current") or []
-        return len(dis)
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        return {ATTR_ATTRIBUTION: ATTRIBUTION}
 
 class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
     """Sensor for details of current disruptions."""

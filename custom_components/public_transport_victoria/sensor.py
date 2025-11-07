@@ -65,15 +65,14 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
 
     def __init__(self, coordinator: DataUpdateCoordinator, number: int):
         super().__init__(coordinator)
-        self._number = number
-        self._connector = coordinator.connector
-        self._attr_name = f"{self._connector.route_name} line to {self._connector.direction_name} from {self._connector.stop_name} {self._number}"
-        self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-dep-{self._number}"
+        connector = coordinator.connector
+        self._attr_name = f"{connector.route_name} line to {connector.direction_name} from {connector.stop_name} {number}"
+        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-dep-{number}"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, str(self._connector.route))},
-            "name": f"{self._connector.route_name} line",
+            "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
+            "name": f"{connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
-            "model": f"{self._connector.route_name} to {self._connector.direction_name} from {self._connector.stop_name}",
+            "model": f"{connector.stop_name} to {connector.direction_name}",
         }
 
     @property

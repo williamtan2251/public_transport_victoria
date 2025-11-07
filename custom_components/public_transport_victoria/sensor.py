@@ -65,7 +65,7 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
         super().__init__(coordinator)
         self._number = number
         self._connector = coordinator.connector
-        self._attr_name = f"{self._connector.route_name} line to {self._connector.direction_name} from {self._connector.stop_name} {self._number}"
+        self._attr_name = f"{self._connector.route_name} line {self._connector.stop_name} to {self._connector.direction_name} {self._number}"
         self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-dep-{self._number}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, str(self._connector.route))},
@@ -110,7 +110,7 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
     def __init__(self, coordinator: DataUpdateCoordinator, details_limit: int):
         super().__init__(coordinator)
         self._details_limit = details_limit
-        self._attr_name = f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name} current disruption"
+        self._attr_name = f"Disruption {self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name}"
         self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-detail"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},

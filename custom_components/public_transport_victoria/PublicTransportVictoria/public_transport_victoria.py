@@ -8,7 +8,6 @@ from hashlib import sha1
 
 from homeassistant.util.dt import get_time_zone
 
-
 BASE_URL = "https://timetableapi.ptv.vic.gov.au"
 DEPARTURES_PATH = "/v3/departures/route_type/{}/stop/{}/route/{}?direction_id={}&max_results={}"
 DIRECTIONS_PATH = "/v3/directions/route/{}"
@@ -41,7 +40,6 @@ class Connector:
         self.direction_name = direction_name
         self.stop_name = stop_name
         self.disruptions_current = []
-        self.disruptions_planned = []
 
     async def _init(self):
         """Async Init Public Transport Victoria connector."""
@@ -219,6 +217,10 @@ class Connector:
         """Update disruptions for the configured route.
         disruption_status: 0 = current, 1 = planned
         """
+        # Only update current disruptions (status 0)
+        if disruption_status != 0:
+            return []
+
         # Build disruptions query filtering to the configured route and type
         disruptions_path = DISRUPTIONS_PATH.format(self.route, self.route_type, disruption_status)
         url = build_URL(self.id, self.api_key, disruptions_path)
@@ -352,23 +354,17 @@ class Connector:
 
             if disruption_status == 0:
                 self.disruptions_current = filtered
-            else:
-                self.disruptions_planned = filtered
 
         if disruption_status == 0:
             for disruption in self.disruptions_current:
                 _LOGGER.debug(disruption)
-        else:
-            for disruption in self.disruptions_planned:
-                _LOGGER.debug(disruption)
 
-        return self.disruptions_current if disruption_status == 0 else self.disruptions_planned
+        return self.disruptions_current if disruption_status == 0 else []
 
     async def async_update_all(self):
-        """Update departures and both disruption sets together."""
+        """Update departures and current disruptions only."""
         await self.async_update()
-        await self.async_update_disruptions(0)
-        await self.async_update_disruptions(1)
+        await self.async_update_disruptions(0)  # Only update current disruptions
 
 def _parse_utc(utc_str):
     """Parse UTC string to datetime, return epoch if parsing fails."""

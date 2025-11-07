@@ -10,8 +10,6 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.const import ATTR_ATTRIBUTION
 from .const import ATTRIBUTION, DOMAIN, DEFAULT_DETAILS_LIMIT
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = datetime.timedelta(minutes=1)
@@ -23,7 +21,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     # Read options, falling back to defaults
     details_limit = DEFAULT_DETAILS_LIMIT
-    planned_enabled = True
 
     # Create the coordinator to manage polling
     # One global coordinator that updates all data once per minute
@@ -37,19 +34,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # Create sensors for the first 5 departures
     new_devices = [PublicTransportVictoriaSensor(coordinator, i) for i in range(5)]
 
-    # Create disruptions sensors
-    # Current
+    # Create current disruptions sensors only (no planned disruptions)
     new_devices.append(PublicTransportVictoriaDisruptionsCountSensor(coordinator, current=True))
     new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=True, details_limit=details_limit, simplified=False))
     new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=True, details_limit=details_limit, simplified=True))
-    # Planned
-    if planned_enabled:
-        new_devices.append(PublicTransportVictoriaDisruptionsCountSensor(coordinator, current=False))
-        new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=False, details_limit=details_limit, simplified=False))
-        new_devices.append(PublicTransportVictoriaDisruptionsDetailSensor(coordinator, current=False, details_limit=details_limit, simplified=True))
 
     async_add_entities(new_devices)
-
 
 class PublicTransportVictoriaGlobalCoordinator(DataUpdateCoordinator):
     """Class to manage fetching Public Transport Victoria data."""
@@ -68,13 +58,11 @@ class PublicTransportVictoriaGlobalCoordinator(DataUpdateCoordinator):
         """Fetch all data from Public Transport Victoria."""
         _LOGGER.debug("Fetching all data from Public Transport Victoria API.")
         await self.connector.async_update_all()
-        # Return a bundle used by all sensors
+        # Return a bundle used by all sensors (only current disruptions, no planned)
         return {
             "departures": self.connector.departures,
             "disruptions_current": self.connector.disruptions_current,
-            "disruptions_planned": self.connector.disruptions_planned,
         }
-
 
 class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
     """Representation of a Public Transport Victoria Sensor."""
@@ -140,7 +128,6 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
             )
         )
 
-
 class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
     """Representation of a disruptions count sensor."""
 
@@ -151,18 +138,18 @@ class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
     @property
     def state(self):
         data = self.coordinator.data or {}
-        key = "disruptions_current" if self._current else "disruptions_planned"
+        key = "disruptions_current"
         dis = data.get(key)
         return len(dis or [])
 
     @property
     def name(self):
-        label = "current disruptions" if self._current else "planned disruptions"
+        label = "current disruptions"
         return "{} line {}".format(self.coordinator.connector.route_name, label)
 
     @property
     def unique_id(self):
-        return "{}-{}-{}".format(self.coordinator.connector.route, "current" if self._current else "planned", "disruptions-count")
+        return "{}-{}-{}".format(self.coordinator.connector.route, "current", "disruptions-count")
 
     @property
     def extra_state_attributes(self):
@@ -179,8 +166,7 @@ class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
 
     @property
     def icon(self):
-        return "mdi:alert" if self._current else "mdi:calendar-clock"
-
+        return "mdi:alert"
 
 class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
     """Representation of a disruptions detail sensor."""
@@ -196,7 +182,7 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
         # A brief state: first disruption title, else 'No disruptions'
         try:
             data = self.coordinator.data or {}
-            key = "disruptions_current" if self._current else "disruptions_planned"
+            key = "disruptions_current"
             dis = data.get(key) or []
             if len(dis) > 0:
                 if self._simplified:
@@ -234,7 +220,7 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
 
     @property
     def name(self):
-        base = "current" if self._current else "planned"
+        base = "current"
         label = f"{base} disruption details"
         if self._simplified:
             label += " - simplified"
@@ -243,12 +229,12 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
     @property
     def unique_id(self):
         suffix = "-simplified" if self._simplified else ""
-        return "{}-{}-{}{}".format(self.coordinator.connector.route, "current" if self._current else "planned", "disruptions-detail", suffix)
+        return "{}-{}-{}{}".format(self.coordinator.connector.route, "current", "disruptions-detail", suffix)
 
     @property
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
-        key = "disruptions_current" if self._current else "disruptions_planned"
+        key = "disruptions_current"
         dis = data.get(key) or []
         disruptions = dis[: self._details_limit]
         attr = {

@@ -61,17 +61,6 @@ class PublicTransportVictoriaGlobalCoordinator(DataUpdateCoordinator):
 class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
     """Sensor for a single departure."""
 
-        
-        self._attr_name = f"Active Disruption {connector.stop_name} to {connector.direction_name}"
-        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-disruptions"
-        self._attr_icon = "mdi:alert"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
-            "name": f"{connector.route_name} line",
-            "manufacturer": "Public Transport Victoria",
-            "model": f"{connector.stop_name} to {connector.direction_name}",
-        }
-
     def __init__(self, coordinator: DataUpdateCoordinator, number: int):
         super().__init__(coordinator)
         self._number = number

@@ -21,7 +21,6 @@ from .PublicTransportVictoria.public_transport_victoria import Connector
 
 _LOGGER = logging.getLogger(__name__)
 
-
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Public Transport Victoria."""
 
@@ -161,10 +160,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             try:
-                # FIX: Pass both route_id and route_type to async_stops
+                # Pass both route_id and route_type to async_stops
                 self.stops = await self.connector.async_stops(
                     self.data[CONF_ROUTE],  # route_id
-                    self.data[CONF_ROUTE_TYPE]  # route_type - added this parameter
+                    self.data[CONF_ROUTE_TYPE]  # route_type
                 )
 
                 self.data[CONF_DIRECTION] = user_input[CONF_DIRECTION]

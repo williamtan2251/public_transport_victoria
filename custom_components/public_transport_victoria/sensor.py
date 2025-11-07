@@ -65,14 +65,15 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
 
     def __init__(self, coordinator: DataUpdateCoordinator, number: int):
         super().__init__(coordinator)
-        connector = self.coordinator.connector
-        self._attr_name = f"{connector.route_name} line to {connector.direction_name} from {connector.stop_name} {number}"
-        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-dep-{number}"
+        self._number = number
+        self._connector = coordinator.connector
+        self._attr_name = f"{self._connector.route_name} line to {self._connector.direction_name} from {self._connector.stop_name} {self._number}"
+        self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-dep-{self._number}"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
-            "name": f"{connector.route_name} line",
+            "identifiers": {(DOMAIN, str(self._connector.route))},
+            "name": f"{self._connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
-            "model": f"{connector.stop_name} to {connector.direction_name}",
+            "model": f"{self._connector.stop_name} to {self._connector.direction_name}",
         }
 
     @property
@@ -108,17 +109,15 @@ class PublicTransportVictoriaSensor(CoordinatorEntity, Entity):
 class PublicTransportVictoriaDisruptionsCountSensor(CoordinatorEntity, Entity):
     """Sensor for the count of current disruptions."""
 
-    def __init__(self, coordinator: DataUpdateCoordinator, number: int):
+    def __init__(self, coordinator: DataUpdateCoordinator):
         super().__init__(coordinator)
-        self._number = number
-        self._connector = coordinator.connector
-        self._attr_name = f"{self._connector.route_name} line to {self._connector.direction_name} from {self._connector.stop_name} {self._number}"
-        self._attr_unique_id = f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}-dep-{self._number}"
+        self._attr_name = f"{self.coordinator.connector.route_name} line to {self.coordinator.connector.direction_name} from {self.coordinator.connector.stop_name} disruptions"
+        self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-count"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{self._connector.route}-{self._connector.direction}-{self._connector.stop}")},
-            "name": f"{self._connector.route_name} line",
+            "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
+            "name": f"{self.coordinator.connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
-            "model": f"{self._connector.stop_name} to {self._connector.direction_name}",
+            "model": f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name}",
         }
         self._attr_icon = "mdi:alert"
 
@@ -139,20 +138,19 @@ class PublicTransportVictoriaDisruptionsDetailSensor(CoordinatorEntity, Entity):
 
     def __init__(self, coordinator: DataUpdateCoordinator, details_limit: int, simplified: bool = False):
         super().__init__(coordinator)
-        connector = self.coordinator.connector
         self._details_limit = details_limit
         self._simplified = simplified
         label = "current disruption details"
         if simplified:
             label += " - simplified"
-        self._attr_name = f"{connector.route_name} line {label}"
+        self._attr_name = f"{self.coordinator.connector.route_name} line {label}"
         suffix = "-simplified" if simplified else ""
-        self._attr_unique_id = f"{connector.route}-{connector.direction}-{connector.stop}-disruptions-detail{suffix}"
+        self._attr_unique_id = f"{self.coordinator.connector.route}-{self.coordinator.connector.direction}-{self.coordinator.connector.stop}-disruptions-detail{suffix}"
         self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{connector.route}-{connector.direction}-{connector.stop}")},
-            "name": f"{connector.route_name} line",
+            "identifiers": {(DOMAIN, str(self.coordinator.connector.route))},
+            "name": f"{self.coordinator.connector.route_name} line",
             "manufacturer": "Public Transport Victoria",
-            "model": f"{connector.stop_name} to {connector.direction_name}",
+            "model": f"{self.coordinator.connector.stop_name} to {self.coordinator.connector.direction_name}",
         }
         self._attr_icon = "mdi:note-text"
 

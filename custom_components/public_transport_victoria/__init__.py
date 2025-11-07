@@ -8,18 +8,24 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_DIRECTION, CONF_DIRECTION_NAME, CONF_ROUTE, CONF_ROUTE_NAME,
     CONF_ROUTE_TYPE, CONF_ROUTE_TYPE_NAME, CONF_STOP, CONF_STOP_NAME, DOMAIN,
+ 
 )
 from .PublicTransportVictoria.public_transport_victoria import Connector
+
 
 # Define the logger
 _LOGGER = logging.getLogger(__name__)
 
+
 PLATFORMS = ["sensor", "binary_sensor"]
+
 
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the Public Transport Victoria component."""
     hass.data.setdefault(DOMAIN, {})
+
     return True
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Public Transport Victoria from a config entry."""
@@ -36,14 +42,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_DIRECTION_NAME],
         entry.data[CONF_STOP_NAME],
     )
-    
-    # Initialize the connector (no _init method needed anymore)
+    await connector._init()
+
     hass.data[DOMAIN][entry.entry_id] = {"connector": connector}
 
     # Use the new async_forward_entry_setups method
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # No options flow; nothing to listen for
+
     return True
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
@@ -59,3 +69,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
+
+
+ 

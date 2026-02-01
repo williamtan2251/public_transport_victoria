@@ -53,16 +53,15 @@ class Connector:
         url = build_URL(self.id, self.api_key, ROUTE_TYPES_PATH)
 
         async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
+            async with session.get(url) as response:
+                if response is not None and response.status == 200:
+                    response = await response.json()
+                    _LOGGER.debug(response)
+                    route_types = {}
+                    for r in response["route_types"]:
+                        route_types[r["route_type"]] = r["route_type_name"]
 
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            route_types = {}
-            for r in response["route_types"]:
-                route_types[r["route_type"]] = r["route_type_name"]
-
-            return route_types
+                    return route_types
 
     async def async_routes(self, route_type):
         """Get routes from Public Transport Victoria API."""
@@ -118,100 +117,96 @@ class Connector:
         url = build_URL(self.id, self.api_key, DIRECTIONS_PATH.format(route))
 
         async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
+            async with session.get(url) as response:
+                if response is not None and response.status == 200:
+                    response = await response.json()
+                    _LOGGER.debug(response)
+                    directions = {}
+                    for r in response["directions"]:
+                        directions[r["direction_id"]] = r["direction_name"]
 
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            directions = {}
-            for r in response["directions"]:
-                directions[r["direction_id"]] = r["direction_name"]
+                    self.route = route
 
-            self.route = route
-
-            return directions
+                    return directions
 
     async def async_stops(self, route):
         """Get stops from Public Transport Victoria API."""
         url = build_URL(self.id, self.api_key, STOPS_PATH.format(route, self.route_type))
 
         async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
+            async with session.get(url) as response:
+                if response is not None and response.status == 200:
+                    response = await response.json()
+                    _LOGGER.debug(response)
+                    stops = {}
+                    for r in response["stops"]:
+                        stops[r["stop_id"]] = r["stop_name"]
 
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            stops = {}
-            for r in response["stops"]:
-                stops[r["stop_id"]] = r["stop_name"]
+                    self.route = route
 
-            self.route = route
-
-            return stops
+                    return stops
 
     async def async_update(self):
         """Update the departure information."""
         url = build_URL(self.id, self.api_key, self.departures_path)
 
         async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
+            async with session.get(url) as response:
+                if response is not None and response.status == 200:
+                    response = await response.json()
+                    _LOGGER.debug(response)
+                    now_utc = datetime.datetime.now(datetime.timezone.utc)
+                    # Build list with computed local string and keep parsed UTC for filtering
+                    departures_raw = []
+                    for r in response["departures"]:
+                        utc_str = r["estimated_departure_utc"] or r["scheduled_departure_utc"]
+                        if not utc_str:
+                            continue
+                        try:
+                            dep_utc = datetime.datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+                        except Exception:
+                            continue
+                        r["_dep_utc"] = dep_utc
+                        r["departure"] = convert_utc_to_local(utc_str, self.hass)
+                        run_info = await self.async_run(r["run_id"])
+                        if run_info:
+                            r["is_express"] = run_info.get("express_stop_count", 0) > 0
+                        else:
+                            r["is_express"] = None
+                        departures_raw.append(r)
 
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-            # Build list with computed local string and keep parsed UTC for filtering
-            departures_raw = []
-            for r in response["departures"]:
-                utc_str = r["estimated_departure_utc"] or r["scheduled_departure_utc"]
-                if not utc_str:
-                    continue
-                try:
-                    dep_utc = datetime.datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-                except Exception:
-                    continue
-                r["_dep_utc"] = dep_utc
-                r["departure"] = convert_utc_to_local(utc_str, self.hass)
-                run_info = await self.async_run(r["run_id"])
-                if run_info:
-                    r["is_express"] = run_info.get("express_stop_count", 0) > 0
-                else:
-                    r["is_express"] = None
-                departures_raw.append(r)
+                    # Keep only future departures
+                    future = [d for d in departures_raw if d["_dep_utc"] > now_utc]
 
-            # Keep only future departures
-            future = [d for d in departures_raw if d["_dep_utc"] > now_utc]
+                    # De-duplicate by minute to avoid identical consecutive times
+                    seen_keys = set()
+                    deduped = []
+                    for d in future:
+                        key = d["_dep_utc"].strftime("%Y-%m-%dT%H:%M")
+                        if key in seen_keys:
+                            continue
+                        seen_keys.add(key)
+                        deduped.append(d)
 
-            # De-duplicate by minute to avoid identical consecutive times
-            seen_keys = set()
-            deduped = []
-            for d in future:
-                key = d["_dep_utc"].strftime("%Y-%m-%dT%H:%M")
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-                deduped.append(d)
+                    # Sort and cap to first 5 for UI
+                    deduped.sort(key=lambda x: x["_dep_utc"]) 
+                    self.departures = deduped[:5]
 
-            # Sort and cap to first 5 for UI
-            deduped.sort(key=lambda x: x["_dep_utc"]) 
-            self.departures = deduped[:5]
-
-        for departure in self.departures:
-            _LOGGER.debug(departure)
+                for departure in self.departures:
+                    _LOGGER.debug(departure)
 
     async def async_run(self, run_id):
         """Get run information from Public Transport Victoria API."""
         url = build_URL(self.id, self.api_key, f"/v3/runs/{run_id}")
 
         async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
-
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
-            if response.get("runs") and len(response["runs"]) > 0:
-                return response["runs"][0]
-        return None
+            async with session.get(url) as response:
+                if response is not None and response.status == 200:
+                    response = await response.json()
+                    _LOGGER.debug(response)
+                    if response.get("runs") and len(response["runs"]) > 0:
+                        return response["runs"][0]
+                return None
 
     async def async_update_disruptions(self, disruption_status: int):
         """Update disruptions for the configured route.
@@ -226,138 +221,137 @@ class Connector:
         url = build_URL(self.id, self.api_key, disruptions_path)
 
         async with aiohttp.ClientSession() as session:
-            response = await session.get(url)
+            async with session.get(url) as response:
+                if response is not None and response.status == 200:
+                    response = await response.json()
+                    _LOGGER.debug(response)
 
-        if response is not None and response.status == 200:
-            response = await response.json()
-            _LOGGER.debug(response)
+                    # Normalise disruptions list from possible response shapes
+                    disruptions_raw = []
+                    if isinstance(response.get("disruptions"), list):
+                        disruptions_raw = response.get("disruptions", [])
+                    elif isinstance(response.get("disruptions"), dict):
+                        # Combine all lists under disruptions dict
+                        for value in response.get("disruptions", {}).values():
+                            if isinstance(value, list):
+                                disruptions_raw.extend(value)
 
-            # Normalise disruptions list from possible response shapes
-            disruptions_raw = []
-            if isinstance(response.get("disruptions"), list):
-                disruptions_raw = response.get("disruptions", [])
-            elif isinstance(response.get("disruptions"), dict):
-                # Combine all lists under disruptions dict
-                for value in response.get("disruptions", {}).values():
-                    if isinstance(value, list):
-                        disruptions_raw.extend(value)
+                    # Store a trimmed disruption object for attributes
+                    normalised = []
+                    for d in disruptions_raw:
+                        try:
+                            # Extract routes with both id and type if available
+                            routes_list = []
+                            for r in d.get("routes", []) if isinstance(d.get("routes"), list) else []:
+                                if isinstance(r, dict):
+                                    routes_list.append({
+                                        "route_id": r.get("route_id"),
+                                        "route_type": r.get("route_type"),
+                                    })
 
-            # Store a trimmed disruption object for attributes
-            normalised = []
-            for d in disruptions_raw:
-                try:
-                    # Extract routes with both id and type if available
-                    routes_list = []
-                    for r in d.get("routes", []) if isinstance(d.get("routes"), list) else []:
-                        if isinstance(r, dict):
-                            routes_list.append({
-                                "route_id": r.get("route_id"),
-                                "route_type": r.get("route_type"),
+                            title = d.get("title")
+                            cleaned_title = _clean_title(title, self.route_name)
+
+                            from_src = d.get("from_date") or d.get("from_time")
+                            to_src = d.get("to_date") or d.get("to_time")
+                            from_local = _safe_local(from_src, self.hass)
+                            to_local = _safe_local(to_src, self.hass)
+                            period_relative = _relative_period(from_local, to_local, self.hass)
+
+                            normalised.append({
+                                "disruption_id": d.get("disruption_id"),
+                                "title": title,
+                                "title_clean": cleaned_title,
+                                "description": d.get("description"),
+                                "disruption_status": d.get("disruption_status"),
+                                "from_date": from_src,
+                                "to_date": to_src,
+                                "last_updated": d.get("last_updated"),
+                                "url": d.get("url") or d.get("url_web"),
+                                "routes": routes_list,
+                                "severity": d.get("severity") or d.get("severity_level"),
+                                "category": d.get("category") or d.get("disruption_type"),
+                                "stops": [s.get("stop_id") for s in d.get("stops", []) if isinstance(s, dict)],
+                                "from_date_local": from_local,
+                                "to_date_local": to_local,
+                                "period_relative": period_relative,
                             })
+                        except Exception as err:
+                            _LOGGER.debug("Error normalising disruption: %s", err)
 
-                    title = d.get("title")
-                    cleaned_title = _clean_title(title, self.route_name)
+                    # Exclude unwanted disruptions by title (case-insensitive)
+                    # Improved exclusion: match groups of keywords in title or description
+                    carpark_groups = [
+                        ["temporary", "temporarily"],
+                        ["car park", "carpark"],
+                        ["closure", "closures", "closed"],
+                    ]
+                    pedestrian_groups = [
+                        ["pedestrian"],
+                        ["access"],
+                        ["change", "changes", "changed"],
+                    ]
+                    escalator_words = ["escalator", "elevator"]
+                    # Keywords that indicate the disruption impacts services beyond pure escalator works
+                    service_keywords = [
+                        "delay",
+                        "train",
+                        "tram",
+                        "bus",
+                        "service",
+                        "platform",
+                        "power",
+                        "outage",
+                        "reader",
+                        "payment",
+                        "eftpos",
+                        "top-up",
+                        "top up",
+                        "myki",
+                    ]
 
-                    from_src = d.get("from_date") or d.get("from_time")
-                    to_src = d.get("to_date") or d.get("to_time")
-                    from_local = _safe_local(from_src, self.hass)
-                    to_local = _safe_local(to_src, self.hass)
-                    period_relative = _relative_period(from_local, to_local, self.hass)
+                    def _should_exclude(n):
+                        combined_text = f"{(n.get('title') or '').lower()} {(n.get('description') or '').lower()}"
+                        if (_text_matches_all_groups(combined_text, carpark_groups) or
+                                _text_matches_all_groups(combined_text, pedestrian_groups)):
+                            return True
 
-                    normalised.append({
-                        "disruption_id": d.get("disruption_id"),
-                        "title": title,
-                        "title_clean": cleaned_title,
-                        "description": d.get("description"),
-                        "disruption_status": d.get("disruption_status"),
-                        "from_date": from_src,
-                        "to_date": to_src,
-                        "last_updated": d.get("last_updated"),
-                        "url": d.get("url") or d.get("url_web"),
-                        "routes": routes_list,
-                        "severity": d.get("severity") or d.get("severity_level"),
-                        "category": d.get("category") or d.get("disruption_type"),
-                        "stops": [s.get("stop_id") for s in d.get("stops", []) if isinstance(s, dict)],
-                        "from_date_local": from_local,
-                        "to_date_local": to_local,
-                        "period_relative": period_relative,
-                    })
-                except Exception as err:
-                    _LOGGER.debug("Error normalising disruption: %s", err)
+                        if any(word in combined_text for word in escalator_words):
+                            if not any(keyword in combined_text for keyword in service_keywords):
+                                return True
 
-            # Exclude unwanted disruptions by title (case-insensitive)
-            # Improved exclusion: match groups of keywords in title or description
-            carpark_groups = [
-                ["temporary", "temporarily"],
-                ["car park", "carpark"],
-                ["closure", "closures", "closed"],
-            ]
-            pedestrian_groups = [
-                ["pedestrian"],
-                ["access"],
-                ["change", "changes", "changed"],
-            ]
-            escalator_words = ["escalator", "elevator"]
-            # Keywords that indicate the disruption impacts services beyond pure escalator works
-            service_keywords = [
-                "delay",
-                "train",
-                "tram",
-                "bus",
-                "service",
-                "platform",
-                "power",
-                "outage",
-                "reader",
-                "payment",
-                "eftpos",
-                "top-up",
-                "top up",
-                "myki",
-            ]
+                        return False
 
-            def _should_exclude(n):
-                combined_text = f"{(n.get('title') or '').lower()} {(n.get('description') or '').lower()}"
-                if (_text_matches_all_groups(combined_text, carpark_groups) or
-                        _text_matches_all_groups(combined_text, pedestrian_groups)):
-                    return True
+                    normalised = [n for n in normalised if not _should_exclude(n)]
 
-                if any(word in combined_text for word in escalator_words):
-                    if not any(keyword in combined_text for keyword in service_keywords):
-                        return True
+                    # Filter to only disruptions that explicitly reference the configured route
+                    route_id_str = str(self.route)
+                    route_type_str = str(self.route_type)
+                    filtered = [
+                        n for n in normalised
+                        if any(
+                            str(r.get("route_id")) == route_id_str and
+                            (r.get("route_type") is None or str(r.get("route_type")) == route_type_str)
+                            for r in n.get("routes", [])
+                        )
+                    ]
 
-                return False
+                    # For current disruptions (status=0), filter out those that ended more than 2 hours ago
+                    if disruption_status == 0:
+                        now_utc = datetime.datetime.now(datetime.timezone.utc)
+                        cutoff = now_utc - datetime.timedelta(hours=2)
+                        filtered = [
+                            n for n in filtered
+                            if not n.get("to_date") or  # Keep if no end date (unplanned)
+                            _parse_utc(n.get("to_date")) > cutoff  # Keep if ended within last 2 hours
+                        ]
 
-            normalised = [n for n in normalised if not _should_exclude(n)]
+                    if disruption_status == 0:
+                        self.disruptions_current = filtered
 
-            # Filter to only disruptions that explicitly reference the configured route
-            route_id_str = str(self.route)
-            route_type_str = str(self.route_type)
-            filtered = [
-                n for n in normalised
-                if any(
-                    str(r.get("route_id")) == route_id_str and
-                    (r.get("route_type") is None or str(r.get("route_type")) == route_type_str)
-                    for r in n.get("routes", [])
-                )
-            ]
-
-            # For current disruptions (status=0), filter out those that ended more than 2 hours ago
-            if disruption_status == 0:
-                now_utc = datetime.datetime.now(datetime.timezone.utc)
-                cutoff = now_utc - datetime.timedelta(hours=2)
-                filtered = [
-                    n for n in filtered
-                    if not n.get("to_date") or  # Keep if no end date (unplanned)
-                    _parse_utc(n.get("to_date")) > cutoff  # Keep if ended within last 2 hours
-                ]
-
-            if disruption_status == 0:
-                self.disruptions_current = filtered
-
-        if disruption_status == 0:
-            for disruption in self.disruptions_current:
-                _LOGGER.debug(disruption)
+                if disruption_status == 0:
+                    for disruption in self.disruptions_current:
+                        _LOGGER.debug(disruption)
 
         return self.disruptions_current if disruption_status == 0 else []
 

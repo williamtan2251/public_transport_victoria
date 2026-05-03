@@ -16,6 +16,7 @@ CONF_STOP_NAME = "stop_name"
 DOMAIN = "public_transport_victoria"
 ATTRIBUTION = "Licensed from Public Transport Victoria under a Creative Commons Attribution 4.0 International Licence"
 DEFAULT_DETAILS_LIMIT = 1
+MAX_DEPARTURES = 5
 SCAN_INTERVAL = timedelta(minutes=1)
 
 ROUTE_TYPE_ICONS: dict[int, str] = {

@@ -15,11 +15,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
+from .const import MAX_DEPARTURES
+
 BASE_URL = "https://timetableapi.ptv.vic.gov.au"
 DEPARTURES_PATH = "/v3/departures/route_type/{}/stop/{}/route/{}?direction_id={}&max_results={}"
 DIRECTIONS_PATH = "/v3/directions/route/{}"
 MAX_RESULTS = 10
-MAX_DEPARTURES = 5
 ROUTE_TYPES_PATH = "/v3/route_types"
 ROUTES_PATH = "/v3/routes?route_types={}"
 STOPS_PATH = "/v3/stops/route/{}/route_type/{}"

@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ATTRIBUTION
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -14,26 +13,28 @@ from .const import (
     ATTRIBUTION,
     DEFAULT_DETAILS_LIMIT,
     DEFAULT_ICON,
-    DOMAIN,
+    MAX_DEPARTURES,
     ROUTE_TYPE_ICONS,
     get_device_info,
 )
 from .coordinator import PublicTransportVictoriaCoordinator
+
+if TYPE_CHECKING:
+    from . import PTVConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: PTVConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Add sensors for passed config_entry in HA."""
-    entry_data = hass.data[DOMAIN][config_entry.entry_id]
-    coordinator: PublicTransportVictoriaCoordinator = entry_data["coordinator"]
+    coordinator = config_entry.runtime_data
 
     entities: list[CoordinatorEntity] = [
-        PublicTransportVictoriaSensor(coordinator, i) for i in range(5)
+        PublicTransportVictoriaSensor(coordinator, i) for i in range(MAX_DEPARTURES)
     ]
     entities.append(
         PublicTransportVictoriaDisruptionsDetailSensor(
@@ -46,6 +47,8 @@ async def async_setup_entry(
 class PublicTransportVictoriaSensor(CoordinatorEntity[PublicTransportVictoriaCoordinator]):
     """Sensor for a single departure."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: PublicTransportVictoriaCoordinator,
@@ -55,10 +58,7 @@ class PublicTransportVictoriaSensor(CoordinatorEntity[PublicTransportVictoriaCoo
         super().__init__(coordinator)
         self._number = number
         connector = coordinator.connector
-        self._attr_name = (
-            f"{connector.route_name} line {connector.stop_name} "
-            f"to {connector.direction_name} {number}"
-        )
+        self._attr_name = f"Departure {number + 1}"
         self._attr_unique_id = (
             f"{connector.route}-{connector.direction}-{connector.stop}-dep-{number}"
         )
@@ -89,6 +89,10 @@ class PublicTransportVictoriaDisruptionsDetailSensor(
 ):
     """Sensor for details of current disruptions."""
 
+    _attr_has_entity_name = True
+    _attr_name = "Disruption"
+    _attr_icon = "mdi:note-text"
+
     def __init__(
         self,
         coordinator: PublicTransportVictoriaCoordinator,
@@ -98,12 +102,10 @@ class PublicTransportVictoriaDisruptionsDetailSensor(
         super().__init__(coordinator)
         connector = coordinator.connector
         self._details_limit = details_limit
-        self._attr_name = f"Disruption {connector.stop_name} to {connector.direction_name}"
         self._attr_unique_id = (
             f"{connector.route}-{connector.direction}-{connector.stop}-disruptions-detail"
         )
         self._attr_device_info = get_device_info(connector)
-        self._attr_icon = "mdi:note-text"
 
     @property
     def state(self) -> str:

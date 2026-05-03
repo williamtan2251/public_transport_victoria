@@ -9,7 +9,6 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/williamtan2251/public_transport_victoria/issues",
   "loggers": ["custom_components.public_transport_victoria"],
-  "platforms": ["sensor", "binary_sensor"],
   "requirements": [],
   "version": "0.5.0"
 }

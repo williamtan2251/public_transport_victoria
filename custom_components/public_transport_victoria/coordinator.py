@@ -1,14 +1,14 @@
 """DataUpdateCoordinator for Public Transport Victoria."""
 from __future__ import annotations
 
-import datetime
 import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .PublicTransportVictoria.public_transport_victoria import Connector
+from .api import Connector
+from .const import SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class PublicTransportVictoriaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             _LOGGER,
             name="Public Transport Victoria",
-            update_interval=datetime.timedelta(minutes=1),
+            update_interval=SCAN_INTERVAL,
         )
 
     async def _async_update_data(self) -> dict[str, Any]:

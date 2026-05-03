@@ -18,8 +18,8 @@ from .const import (
     CONF_STOP_NAME,
     DOMAIN,
 )
+from .api import Connector
 from .coordinator import PublicTransportVictoriaCoordinator
-from .PublicTransportVictoria.public_transport_victoria import Connector
 
 _LOGGER = logging.getLogger(__name__)
 

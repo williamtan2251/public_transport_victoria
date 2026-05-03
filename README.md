@@ -20,7 +20,7 @@ After you have installed the custom component (see above):
 4. Click `Submit` to add the integration.
 
 ## Notes
-This integration refreshes data every 3 minutes. If you wish to update the departure information more frequently during interesting periods, you may use an automation like the one below. It will update the sensors every minute between 7:30AM-8:30AM and 4:45PM-5:45PM.
+This integration refreshes data every minute. If you previously used an automation like the one below to force more frequent updates during peak periods, it is no longer required.
 ```
 automation:
 

@@ -1,7 +1,6 @@
 """Platform for sensor integration."""
 from __future__ import annotations
 
-import re
 import logging
 from typing import Any
 
@@ -108,41 +107,15 @@ class PublicTransportVictoriaDisruptionsDetailSensor(
 
     @property
     def state(self) -> str:
-        """Return a brief state: first disruption title, else 'No disruptions'."""
-        try:
-            data = self.coordinator.data or {}
-            dis = data.get("disruptions_current") or []
-            if dis:
-                raw_title = dis[0].get("title") or "Disruption"
-                title = dis[0].get("title_clean") or raw_title
-                rel = dis[0].get("period_relative")
-                result = title
-                if rel:
-                    date_range_pattern = r'from\s+\w+.*?\s+(?:to|until)\s+\w+.*?(?:\s|$)'
-                    if (
-                        rel.startswith("from ")
-                        and " until " in rel
-                        and re.search(date_range_pattern, raw_title, re.IGNORECASE)
-                    ):
-                        if " until " in title:
-                            title = title.split(" until ", 1)[0]
-                        elif " to " in title:
-                            title = title.split(" to ", 1)[0]
-                            if " from " in title:
-                                title = title.replace(" from ", " ", 1)
-                        until_part = rel.split(" until ", 1)[1]
-                        result = f"{title} until {until_part}"
-                    else:
-                        result = f"{title} — {rel}"
-
-                if len(result) > 255:
-                    result = result[:252] + "..."
-
-                return result
+        """Return a brief state: first disruption summary, else 'No disruptions'."""
+        dis = (self.coordinator.data or {}).get("disruptions_current") or []
+        if not dis:
             return "No disruptions"
-        except Exception as e:
-            _LOGGER.error("Error in disruption sensor state: %s", e)
-            return "Error"
+        result = dis[0].get("state_text") or dis[0].get("title_clean") \
+            or dis[0].get("title") or "Disruption"
+        if len(result) > 255:
+            result = result[:252] + "..."
+        return result
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

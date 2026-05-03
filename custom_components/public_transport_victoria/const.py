@@ -1,6 +1,8 @@
 """Constants for the Public Transport Victoria integration."""
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.helpers.device_registry import DeviceInfo
 
 CONF_DIRECTION = "direction"
@@ -14,6 +16,7 @@ CONF_STOP_NAME = "stop_name"
 DOMAIN = "public_transport_victoria"
 ATTRIBUTION = "Licensed from Public Transport Victoria under a Creative Commons Attribution 4.0 International Licence"
 DEFAULT_DETAILS_LIMIT = 1
+SCAN_INTERVAL = timedelta(minutes=3)
 
 ROUTE_TYPE_ICONS: dict[int, str] = {
     0: "mdi:train",

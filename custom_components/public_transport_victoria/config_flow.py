@@ -21,7 +21,7 @@ from .const import (
     CONF_STOP_NAME,
     DOMAIN,
 )
-from .PublicTransportVictoria.public_transport_victoria import Connector
+from .api import Connector
 
 _LOGGER = logging.getLogger(__name__)
 

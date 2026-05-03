@@ -5,8 +5,11 @@ import asyncio
 import datetime
 import hmac
 import logging
+import re
 from hashlib import sha1
 from typing import Any
+
+import aiohttp
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -16,10 +19,12 @@ BASE_URL = "https://timetableapi.ptv.vic.gov.au"
 DEPARTURES_PATH = "/v3/departures/route_type/{}/stop/{}/route/{}?direction_id={}&max_results={}"
 DIRECTIONS_PATH = "/v3/directions/route/{}"
 MAX_RESULTS = 10
+MAX_DEPARTURES = 5
 ROUTE_TYPES_PATH = "/v3/route_types"
 ROUTES_PATH = "/v3/routes?route_types={}"
 STOPS_PATH = "/v3/stops/route/{}/route_type/{}"
 DISRUPTIONS_PATH = "/v3/disruptions?route_ids={}&route_types={}&disruption_status={}"
+REQUEST_TIMEOUT = 15
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,11 +75,21 @@ class Connector:
         """Make an authenticated GET request to the PTV API."""
         url = build_url(self.id, self.api_key, path)
         session = async_get_clientsession(self.hass)
-        response = await session.get(url)
-        if response.status == 200:
-            return await response.json()
-        _LOGGER.warning("PTV API returned status %s for %s", response.status, path)
-        return None
+        try:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    _LOGGER.warning(
+                        "PTV API returned status %s for %s", response.status, path
+                    )
+                    return None
+        except asyncio.TimeoutError:
+            _LOGGER.warning("PTV API request timed out for %s", path)
+            return None
+        except aiohttp.ClientError as err:
+            _LOGGER.warning("PTV API request failed for %s: %s", path, err)
+            return None
 
     async def async_route_types(self) -> dict[int, str] | None:
         """Get route types from Public Transport Victoria API."""
@@ -152,7 +167,6 @@ class Connector:
 
         # Parse departures and compute local time strings
         departures_raw: list[dict[str, Any]] = []
-        run_ids: set[int] = set()
         for r in data["departures"]:
             utc_str = r["estimated_departure_utc"] or r["scheduled_departure_utc"]
             if not utc_str:
@@ -165,10 +179,25 @@ class Connector:
                 continue
             r["_dep_utc"] = dep_utc
             r["departure"] = convert_utc_to_local(utc_str, self.hass)
-            run_ids.add(r["run_id"])
             departures_raw.append(r)
 
-        # Fetch all run info concurrently
+        # Keep only future departures
+        future = [d for d in departures_raw if d["_dep_utc"] > now_utc]
+
+        # De-duplicate by minute, then sort, then cap to MAX_DEPARTURES
+        seen_keys: set[str] = set()
+        deduped: list[dict[str, Any]] = []
+        for d in future:
+            key = d["_dep_utc"].strftime("%Y-%m-%dT%H:%M")
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(d)
+        deduped.sort(key=lambda x: x["_dep_utc"])
+        top = deduped[:MAX_DEPARTURES]
+
+        # Fetch run info only for the kept departures
+        run_ids = {d["run_id"] for d in top}
         run_map: dict[int, dict[str, Any]] = {}
         if run_ids:
             results = await asyncio.gather(
@@ -179,35 +208,14 @@ class Connector:
                 if isinstance(result, dict):
                     run_map[rid] = result
 
-        # Attach express info from run_map
-        for r in departures_raw:
-            run_info = run_map.get(r["run_id"])
-            if run_info:
-                r["is_express"] = run_info.get("express_stop_count", 0) > 0
-            else:
-                r["is_express"] = None
-
-        # Keep only future departures
-        future = [d for d in departures_raw if d["_dep_utc"] > now_utc]
-
-        # De-duplicate by minute to avoid identical consecutive times
-        seen_keys: set[str] = set()
-        deduped: list[dict[str, Any]] = []
-        for d in future:
-            key = d["_dep_utc"].strftime("%Y-%m-%dT%H:%M")
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            deduped.append(d)
-
-        # Sort and cap to first 5 for UI
-        deduped.sort(key=lambda x: x["_dep_utc"])
-
-        # Clean up internal field before storing
-        for d in deduped[:5]:
+        for d in top:
+            run_info = run_map.get(d["run_id"])
+            d["is_express"] = (
+                run_info.get("express_stop_count", 0) > 0 if run_info else None
+            )
             d.pop("_dep_utc", None)
 
-        self.departures = deduped[:5]
+        self.departures = top
 
         for departure in self.departures:
             _LOGGER.debug(departure)
@@ -260,11 +268,15 @@ class Connector:
                 from_local = _safe_local(from_src, self.hass)
                 to_local = _safe_local(to_src, self.hass)
                 period_relative = _relative_period(from_local, to_local, self.hass)
+                state_text = _format_disruption_state(
+                    title, cleaned_title, period_relative
+                )
 
                 normalised.append({
                     "disruption_id": d.get("disruption_id"),
                     "title": title,
                     "title_clean": cleaned_title,
+                    "state_text": state_text,
                     "description": d.get("description"),
                     "disruption_status": d.get("disruption_status"),
                     "from_date": from_src,
@@ -414,6 +426,43 @@ def _clean_title(title: str | None, route_name: str | None) -> str | None:
         if (" line" in prefix or " lines" in prefix) and (rn_lower in prefix):
             return t[colon + 1 :].lstrip()
     return t
+
+
+_TITLE_DATE_RANGE_RE = re.compile(
+    r"from\s+\w+.*?\s+(?:to|until)\s+\w+.*?(?:\s|$)",
+    re.IGNORECASE,
+)
+
+
+def _format_disruption_state(
+    title: str | None,
+    title_clean: str | None,
+    period_relative: str | None,
+) -> str:
+    """Build a one-line summary of a disruption for sensor state.
+
+    When the raw title already contains a "from <date> to/until <date>" range
+    and we have a friendlier today/tomorrow period, replace the title's range
+    with the relative one to avoid double-rendering dates.
+    """
+    raw = (title or "Disruption").strip()
+    base = (title_clean or raw).strip()
+    if not period_relative:
+        return base
+    if (
+        period_relative.startswith("from ")
+        and " until " in period_relative
+        and _TITLE_DATE_RANGE_RE.search(raw)
+    ):
+        if " until " in base:
+            base = base.split(" until ", 1)[0]
+        elif " to " in base:
+            base = base.split(" to ", 1)[0]
+            if " from " in base:
+                base = base.replace(" from ", " ", 1)
+        until_part = period_relative.split(" until ", 1)[1]
+        return f"{base.rstrip()} until {until_part}"
+    return f"{base} — {period_relative}"
 
 
 def _relative_period(

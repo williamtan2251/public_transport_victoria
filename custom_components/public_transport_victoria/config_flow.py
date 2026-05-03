@@ -178,7 +178,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 self.stops = (
-                    await self.connector.async_stops(self.data[CONF_ROUTE]) or {}
+                    await self.connector.async_stops(
+                        self.data[CONF_ROUTE], self.data[CONF_ROUTE_TYPE]
+                    ) or {}
                 )
 
                 self.data[CONF_DIRECTION] = user_input[CONF_DIRECTION]
@@ -215,6 +217,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 self.data[CONF_STOP] = user_input[CONF_STOP]
                 self.data[CONF_STOP_NAME] = self.stops[user_input[CONF_STOP]]
+
+                unique_id = (
+                    f"{self.data[CONF_ROUTE]}-"
+                    f"{self.data[CONF_DIRECTION]}-"
+                    f"{self.data[CONF_STOP]}"
+                )
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
 
                 title = (
                     f"{self.data[CONF_ROUTE_NAME]} line: "

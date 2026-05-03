@@ -55,13 +55,16 @@ class Connector:
         self.stop_name = stop_name
         self.departures: list[dict[str, Any]] = []
         self.disruptions_current: list[dict[str, Any]] = []
-
-    async def _init(self) -> None:
-        """Async Init Public Transport Victoria connector."""
-        self.departures_path = DEPARTURES_PATH.format(
-            self.route_type, self.stop, self.route, self.direction, MAX_RESULTS
-        )
-        await self.async_update()
+        self.departures_path: str | None = None
+        if (
+            route_type is not None
+            and route is not None
+            and direction is not None
+            and stop is not None
+        ):
+            self.departures_path = DEPARTURES_PATH.format(
+                route_type, stop, route, direction, MAX_RESULTS
+            )
 
     async def _api_get(self, path: str) -> dict[str, Any] | None:
         """Make an authenticated GET request to the PTV API."""
@@ -109,7 +112,6 @@ class Connector:
             return (0, sort_val)
 
         route_list.sort(key=sort_key)
-        self.route_type = route_type
         return {route_id: display_name for route_id, _, display_name in route_list}
 
     async def async_directions(self, route: int) -> dict[int, str] | None:
@@ -118,16 +120,14 @@ class Connector:
         if data is None:
             return None
         _LOGGER.debug(data)
-        self.route = route
         return {r["direction_id"]: r["direction_name"] for r in data["directions"]}
 
-    async def async_stops(self, route: int) -> dict[int, str] | None:
+    async def async_stops(self, route: int, route_type: int) -> dict[int, str] | None:
         """Get stops from Public Transport Victoria API."""
-        data = await self._api_get(STOPS_PATH.format(route, self.route_type))
+        data = await self._api_get(STOPS_PATH.format(route, route_type))
         if data is None:
             return None
         _LOGGER.debug(data)
-        self.route = route
         return {r["stop_id"]: r["stop_name"] for r in data["stops"]}
 
     async def async_run(self, run_id: int) -> dict[str, Any] | None:
@@ -384,7 +384,7 @@ def _safe_local(
             "human": d.strftime("%Y-%m-%d %I:%M %p"),
         }
     except Exception:
-        return {"iso": utc, "human": utc}
+        return None
 
 
 def _text_matches_all_groups(text: str, groups: list[list[str]]) -> bool:

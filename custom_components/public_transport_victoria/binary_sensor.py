@@ -2,31 +2,33 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.const import ATTR_ATTRIBUTION
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTRIBUTION, DOMAIN, get_device_info
+from .const import ATTRIBUTION, get_device_info
 from .coordinator import PublicTransportVictoriaCoordinator
+
+if TYPE_CHECKING:
+    from . import PTVConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: PTVConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up binary sensors for Public Transport Victoria from a config entry."""
-    coordinator: PublicTransportVictoriaCoordinator = (
-        hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
-    )
-    async_add_entities([PTVCurrentDisruptionsBinarySensor(coordinator)])
+    async_add_entities([PTVCurrentDisruptionsBinarySensor(config_entry.runtime_data)])
 
 
 class PTVCurrentDisruptionsBinarySensor(
@@ -35,15 +37,18 @@ class PTVCurrentDisruptionsBinarySensor(
 ):
     """Binary sensor that is on when there are current disruptions."""
 
+    _attr_has_entity_name = True
+    _attr_name = "Active disruption"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:alert"
+
     def __init__(self, coordinator: PublicTransportVictoriaCoordinator) -> None:
         """Initialize the binary sensor."""
         super().__init__(coordinator)
         connector = coordinator.connector
-        self._attr_name = f"Active Disruption {connector.stop_name} to {connector.direction_name}"
         self._attr_unique_id = (
             f"{connector.route}-{connector.direction}-{connector.stop}-disruptions"
         )
-        self._attr_icon = "mdi:alert"
         self._attr_device_info = get_device_info(connector)
 
     @property

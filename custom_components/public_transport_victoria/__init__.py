@@ -41,7 +41,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_DIRECTION_NAME],
         entry.data[CONF_STOP_NAME],
     )
-    await connector._init()
 
     coordinator = PublicTransportVictoriaCoordinator(hass, connector)
     await coordinator.async_config_entry_first_refresh()
